@@ -8,6 +8,14 @@ export function isAgentAvailable(): boolean {
   return isTauri();
 }
 
+// Selectable models for AI actions. "" means the SDK/account default.
+export const AGENT_MODELS: { id: string; label: string }[] = [
+  { id: "", label: "Default" },
+  { id: "claude-opus-4-8", label: "Opus 4.8" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+];
+
 export interface ChatHandlers {
   onDelta?: (text: string) => void;
   onMetadata?: (data: Record<string, unknown>) => void;
@@ -32,10 +40,18 @@ export interface AutoTagResult {
 
 let counter = 0;
 
+// The model every AI call uses, set once from the store ("" = the SDK/account
+// default). Injected into each payload so we don't thread it through call sites.
+let currentModel = "";
+export function setAgentModel(model: string): void {
+  currentModel = model || "";
+}
+
 async function runAgent(
   payload: Record<string, unknown>,
   handlers: ChatHandlers,
 ): Promise<() => void> {
+  if (currentModel && payload.model === undefined) payload = { model: currentModel, ...payload };
   if (!isTauri()) {
     handlers.onError?.(
       "AI runs through the native sidecar — launch the desktop app (not the web preview).",

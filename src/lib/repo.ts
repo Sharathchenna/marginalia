@@ -15,6 +15,8 @@ export interface Settings {
   librarySet: boolean;
   /** Translucent (real OS glass) interface. Optional — defaults per platform. */
   glass?: boolean;
+  /** Model id for AI actions; "" / undefined = SDK default. */
+  model?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

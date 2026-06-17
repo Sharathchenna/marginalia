@@ -21,7 +21,7 @@ import {
 } from "./lib/library";
 import type { ScannedPdf } from "./lib/library";
 import { lookupIdentifier } from "./lib/metadata";
-import { autoTag as agentAutoTag, extractMetadata, summarizePaper } from "./lib/agent";
+import { autoTag as agentAutoTag, extractMetadata, summarizePaper, setAgentModel } from "./lib/agent";
 import type { AutoTagResult } from "./lib/agent";
 import { exportLibrary as exportLibraryMd, exportPaper as exportPaperMd } from "./lib/markdown";
 import { parseBibliography } from "./lib/citation";
@@ -120,6 +120,8 @@ export function useStore() {
   const [librarySet, setLibrarySet] = useState(true);
   // Translucent (real OS glass) interface; default on where the platform supports it.
   const [glass, setGlassState] = useState(GLASS_PLATFORM !== "off");
+  // Model for all AI actions ("" = SDK/account default).
+  const [model, setModelState] = useState("");
 
   // ----- transient UI state -----
   const [filter, setFilter] = useState<Filter>("all");
@@ -170,6 +172,10 @@ export function useStore() {
       setWatchFolders(st.watchFolders);
       setLibrarySet(st.librarySet);
       if (typeof st.glass === "boolean") setGlassState(st.glass);
+      if (typeof st.model === "string") {
+        setModelState(st.model);
+        setAgentModel(st.model);
+      }
       if (ps.length && !ps.some((p) => p.id === "attention")) {
         setSelectedId(ps[0].id);
         setReaderId(ps[0].id);
@@ -385,6 +391,7 @@ export function useStore() {
     watchFolders,
     glass,
     glassMode: (glass ? GLASS_PLATFORM : "off") as "full" | "acrylic" | "off",
+    model,
     filter,
     selectedId,
     sel,
@@ -428,6 +435,11 @@ export function useStore() {
     setGlass: (on: boolean) => {
       setGlassState(on);
       persistSettings({ glass: on });
+    },
+    setModel: (m: string) => {
+      setModelState(m);
+      setAgentModel(m);
+      persistSettings({ model: m });
     },
     setTheme: (t: Theme) => {
       setThemeState(t);
@@ -646,7 +658,7 @@ export function useStore() {
         version: 1,
         papers,
         collections,
-        settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass },
+        settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
       };
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
@@ -676,6 +688,10 @@ export function useStore() {
           if (st.libraryLocation) setLibraryLocation(st.libraryLocation);
           if (Array.isArray(st.watchFolders)) setWatchFolders(st.watchFolders);
           if (typeof st.glass === "boolean") setGlassState(st.glass);
+          if (typeof st.model === "string") {
+            setModelState(st.model);
+            setAgentModel(st.model);
+          }
           void r.saveSettings(st);
         }
         showToast("Library restored");

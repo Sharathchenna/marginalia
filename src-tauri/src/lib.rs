@@ -28,7 +28,8 @@ fn default_settings() -> Value {
         "libraryLocation": "~/Documents/Marginalia",
         "watchFolders": ["~/Downloads/Papers", "~/Dropbox/Zotero-inbox"],
         "librarySet": false,
-        "glass": true
+        "glass": true,
+        "model": ""
     })
 }
 

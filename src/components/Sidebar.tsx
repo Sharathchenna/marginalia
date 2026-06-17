@@ -1,4 +1,5 @@
 import type { Store } from "../store";
+import { AGENT_MODELS, isAgentAvailable } from "../lib/agent";
 import {
   AllPapersIcon,
   ClockIcon,
@@ -116,6 +117,18 @@ export function Sidebar({ store: s }: { store: Store }) {
       </div>
 
       <div className="sidebar-footer">
+        {isAgentAvailable() && (
+          <label className="model-select" title="Model used for all AI actions">
+            <span className="model-select-label">AI model</span>
+            <select value={s.model} onChange={(e) => s.setModel(e.target.value)}>
+              {AGENT_MODELS.map((m) => (
+                <option key={m.id || "default"} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button className="nav-item" data-active={s.screen === "notebook"} onClick={() => s.goScreen("notebook")}>
           <NotebookIcon size={15} />
           <span className="grow">Notebook</span>
