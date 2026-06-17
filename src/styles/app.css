@@ -135,6 +135,11 @@ kbd {
 .btn-ghost:hover {
   background: var(--row-hover);
 }
+.btn-ghost[data-active="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .btn-primary {
   height: 30px;
   padding: 0 13px;
@@ -2447,6 +2452,21 @@ textarea.editable-input {
   display: flex;
   flex-direction: column;
   animation: fadein 0.15s;
+}
+/* Embedded in the reader's right sidebar — shares the slot with annotations,
+   sits in flow (no overlay/shadow) so the PDF stays fully visible. */
+.chat-sidebar {
+  width: 380px;
+  flex: none;
+  min-height: 0;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  animation: fadein 0.15s;
+}
+.chat-sidebar .chat-head {
+  height: 44px;
 }
 .chat-head {
   flex: none;

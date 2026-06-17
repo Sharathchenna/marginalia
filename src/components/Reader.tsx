@@ -17,6 +17,7 @@ import {
   type OutlineNode,
 } from "../lib/pdf";
 import { resolvePdf } from "../lib/library";
+import { ChatPanel } from "./ChatPanel";
 import { AnnPanelIcon, ChevronLeftIcon, SearchIcon, StickyIcon } from "../icons";
 
 const BASE_WIDTH = 640;
@@ -326,8 +327,28 @@ export function Reader({ store: s }: { store: Store }) {
               <StickyIcon size={14} />
             </button>
           </div>
-          <button className="btn-ghost" onClick={s.openChat} title="Chat about this paper">Ask AI</button>
-          <button className="ann-toggle" data-active={s.annOpen} onClick={s.toggleAnn} title="Annotations">
+          <button
+            className="btn-ghost"
+            data-active={s.chatOpen}
+            onClick={() => (s.chatOpen ? s.closeChat() : s.openChat())}
+            title="Ask AI about this paper"
+          >
+            Ask AI
+          </button>
+          <button
+            className="ann-toggle"
+            data-active={s.annOpen && !s.chatOpen}
+            onClick={() => {
+              // Chat and annotations share the right sidebar — switch between them.
+              if (s.chatOpen) {
+                s.closeChat();
+                if (!s.annOpen) s.toggleAnn();
+              } else {
+                s.toggleAnn();
+              }
+            }}
+            title="Annotations"
+          >
             <AnnPanelIcon size={14} />
           </button>
         </div>
@@ -416,8 +437,10 @@ export function Reader({ store: s }: { store: Store }) {
         </div>
       )}
 
-      {/* annotations sidebar */}
-      {s.annOpen && (
+      {/* right sidebar: chat takes priority when open, else annotations */}
+      {s.chatOpen ? (
+        <ChatPanel store={s} embedded />
+      ) : s.annOpen ? (
         <aside className="ann-sidebar">
           <div className="ann-head">
             <span className="title">Annotations</span>
@@ -450,7 +473,7 @@ export function Reader({ store: s }: { store: Store }) {
             ))}
           </div>
         </aside>
-      )}
+      ) : null}
     </main>
   );
 }

@@ -47,7 +47,9 @@ export default function App() {
       {s.importOpen && <ImportModal store={s} />}
       {s.idOpen && <AddByIdModal store={s} />}
       {s.citeOpen && <CiteModal store={s} />}
-      {s.chatOpen && <ChatPanel store={s} />}
+      {/* In the reader the chat is embedded in the right sidebar (see Reader);
+          elsewhere (e.g. "Ask your library") it floats as a drawer. */}
+      {s.chatOpen && s.screen !== "reader" && <ChatPanel store={s} />}
       {s.toast && <Toast message={s.toast} />}
     </div>
   );
