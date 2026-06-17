@@ -19,7 +19,7 @@ export default function App() {
   const s = useStore();
 
   return (
-    <div className="app-shell" data-theme={s.theme} data-density={s.density}>
+    <div className="app-shell" data-theme={s.theme} data-density={s.density} data-glass={s.glassMode}>
       <TitleBar store={s} />
 
       {!s.loaded ? (

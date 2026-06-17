@@ -13,6 +13,8 @@ export interface Settings {
   watchFolders: string[];
   /** Whether the user has chosen a library folder (gates onboarding). */
   librarySet: boolean;
+  /** Translucent (real OS glass) interface. Optional — defaults per platform. */
+  glass?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

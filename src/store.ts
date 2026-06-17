@@ -11,7 +11,7 @@ import type {
   ViewMode,
 } from "./types";
 import { repo, type Settings } from "./lib/repo";
-import { invoke, isTauri } from "./lib/tauri";
+import { invoke, isTauri, detectGlassPlatform } from "./lib/tauri";
 import {
   chooseLibraryFolder,
   importPdf,
@@ -25,6 +25,9 @@ import type { AutoTagResult } from "./lib/agent";
 import { exportLibrary as exportLibraryMd, exportPaper as exportPaperMd } from "./lib/markdown";
 import { parseBibliography } from "./lib/citation";
 import { searchPapers } from "./lib/search";
+
+// Native window-material the current platform supports (computed once).
+const GLASS_PLATFORM = detectGlassPlatform();
 
 const SORT_LABEL: Record<SortKey, string> = {
   added: "Date added",
@@ -114,6 +117,8 @@ export function useStore() {
   const [libraryLocation, setLibraryLocation] = useState("~/Documents/Papers");
   const [watchFolders, setWatchFolders] = useState<string[]>([]);
   const [librarySet, setLibrarySet] = useState(true);
+  // Translucent (real OS glass) interface; default on where the platform supports it.
+  const [glass, setGlassState] = useState(GLASS_PLATFORM !== "off");
 
   // ----- transient UI state -----
   const [filter, setFilter] = useState<Filter>("all");
@@ -163,6 +168,7 @@ export function useStore() {
       setLibraryLocation(st.libraryLocation);
       setWatchFolders(st.watchFolders);
       setLibrarySet(st.librarySet);
+      if (typeof st.glass === "boolean") setGlassState(st.glass);
       if (ps.length && !ps.some((p) => p.id === "attention")) {
         setSelectedId(ps[0].id);
         setReaderId(ps[0].id);
@@ -376,6 +382,8 @@ export function useStore() {
     defaultCite,
     libraryLocation,
     watchFolders,
+    glass,
+    glassMode: (glass ? GLASS_PLATFORM : "off") as "full" | "acrylic" | "off",
     filter,
     selectedId,
     sel,
@@ -415,6 +423,11 @@ export function useStore() {
     },
 
     // settings actions (persisted)
+    glassSupported: GLASS_PLATFORM !== "off",
+    setGlass: (on: boolean) => {
+      setGlassState(on);
+      persistSettings({ glass: on });
+    },
     setTheme: (t: Theme) => {
       setThemeState(t);
       persistSettings({ theme: t });
@@ -632,7 +645,7 @@ export function useStore() {
         version: 1,
         papers,
         collections,
-        settings: { theme, density, view, defaultCite, libraryLocation, watchFolders },
+        settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass },
       };
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
@@ -661,6 +674,7 @@ export function useStore() {
           if (st.defaultCite) setDefaultCite(st.defaultCite);
           if (st.libraryLocation) setLibraryLocation(st.libraryLocation);
           if (Array.isArray(st.watchFolders)) setWatchFolders(st.watchFolders);
+          if (typeof st.glass === "boolean") setGlassState(st.glass);
           void r.saveSettings(st);
         }
         showToast("Library restored");

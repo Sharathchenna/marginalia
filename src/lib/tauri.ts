@@ -12,3 +12,20 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(cmd, args);
 }
+
+// Which native window-material the platform can show behind transparent chrome.
+// `full` = macOS NSVisualEffect (Liquid Glass on Tahoe); `acrylic` = Windows
+// acrylic; `off` = no native material (Linux / web / reduced-transparency).
+export type GlassMode = "full" | "acrylic" | "off";
+export function detectGlassPlatform(): GlassMode {
+  if (!isTauri()) return "off";
+  try {
+    if (window.matchMedia?.("(prefers-reduced-transparency: reduce)").matches) return "off";
+  } catch {
+    /* matchMedia unavailable — ignore */
+  }
+  const ua = navigator.userAgent;
+  if (/Mac OS X|Macintosh/i.test(ua)) return "full";
+  if (/Windows/i.test(ua)) return "acrylic";
+  return "off";
+}

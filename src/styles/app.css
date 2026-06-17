@@ -2741,3 +2741,33 @@ textarea.editable-input {
   align-items: center;
   gap: 9px;
 }
+
+/* ===== Real OS window glass (macOS NSVisualEffect / Windows acrylic) =====
+   The native material lives behind a transparent webview (set up in Rust). We
+   make only the window-edge chrome transparent so the genuine OS material shows
+   through — there is NO CSS blur here; the blur is the operating system's.
+   Content panes stay solid so text and PDFs remain legible. When glass is off,
+   none of this applies and .app-shell stays opaque, hiding the material. */
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) {
+  background: transparent;
+}
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) .titlebar,
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) .sidebar,
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) .reader,
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) .thumbs,
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) .chat-sidebar,
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) .ann-sidebar {
+  background: transparent;
+}
+/* Keep the central reading column solid over the material. */
+.app-shell:is([data-glass="full"], [data-glass="acrylic"]) .reading-col {
+  background: var(--bg-content);
+}
+
+/* Accessibility: if the OS asks for reduced transparency, GLASS_PLATFORM already
+   resolves to "off" — this is a belt-and-suspenders fallback. */
+@media (prefers-reduced-transparency: reduce) {
+  .app-shell:is([data-glass="full"], [data-glass="acrylic"]) {
+    background: var(--bg-window);
+  }
+}

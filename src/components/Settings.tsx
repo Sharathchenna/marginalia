@@ -77,6 +77,23 @@ export function Settings({ store: s }: { store: Store }) {
                 <span className="label">Dark</span>
               </button>
             </div>
+            {s.glassSupported && (
+              <div style={{ marginTop: 16 }}>
+                <h3 style={{ marginBottom: 2 }}>Translucent interface</h3>
+                <p className="desc">
+                  Use the real macOS window material (Liquid Glass on macOS&nbsp;26)
+                  behind the sidebars and title bar.
+                </p>
+                <div className="seg-group">
+                  <button className="seg-pill" data-active={s.glass} onClick={() => s.setGlass(true)}>
+                    On
+                  </button>
+                  <button className="seg-pill" data-active={!s.glass} onClick={() => s.setGlass(false)}>
+                    Off
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>

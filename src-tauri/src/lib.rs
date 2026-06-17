@@ -27,7 +27,8 @@ fn default_settings() -> Value {
         "defaultCite": "APA",
         "libraryLocation": "~/Documents/Marginalia",
         "watchFolders": ["~/Downloads/Papers", "~/Dropbox/Zotero-inbox"],
-        "librarySet": false
+        "librarySet": false,
+        "glass": true
     })
 }
 
@@ -288,6 +289,31 @@ pub fn run() {
                 db: Mutex::new(conn),
                 watcher: Mutex::new(None),
             });
+
+            // Native window translucency. On macOS 26 (Tahoe) the system renders
+            // this NSVisualEffect material as Liquid Glass automatically; on older
+            // macOS it's classic frosted vibrancy. The frontend keeps the window
+            // backdrop visible only when its `data-glass` mode is active, so this
+            // is harmless when the user turns translucency off.
+            #[cfg(target_os = "macos")]
+            {
+                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = apply_vibrancy(
+                        &win,
+                        NSVisualEffectMaterial::Sidebar,
+                        Some(NSVisualEffectState::Active),
+                        None,
+                    );
+                }
+            }
+            #[cfg(target_os = "windows")]
+            {
+                use window_vibrancy::apply_acrylic;
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = apply_acrylic(&win, Some((18, 18, 20, 125)));
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
