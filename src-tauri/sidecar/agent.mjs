@@ -12,6 +12,16 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 
+// A Finder-launched macOS app has a minimal PATH, so when the Agent SDK spawns
+// its own `node` child (the Claude Code process) bare `node` can fail with
+// ENOENT. Guarantee the directory of the node binary running THIS sidecar — plus
+// the usual install dirs — are on PATH so that inner spawn always resolves.
+{
+  const want = [dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+  const have = (process.env.PATH || "").split(":").filter(Boolean);
+  process.env.PATH = [...want.filter((d) => d && !have.includes(d)), ...have].join(":");
+}
+
 function expandHome(p) {
   return p && p.startsWith("~/") ? homedir() + p.slice(1) : p;
 }

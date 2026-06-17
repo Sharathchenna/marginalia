@@ -55,9 +55,25 @@ pub fn ai_chat(app: AppHandle, request_id: String, payload: Value) -> Result<(),
     )?;
     let (dir, script) = resolve_sidecar(&app).ok_or("Agent sidecar not found.")?;
 
+    // A Finder-launched app has a minimal PATH. Prepend node's own directory and
+    // the common install dirs so the sidecar — and any `node` the Agent SDK spawns
+    // beneath it — resolve reliably (fixes intermittent "spawn node ENOENT").
+    let mut path_dirs: Vec<String> = Vec::new();
+    if let Some(node_dir) = std::path::Path::new(&node).parent() {
+        path_dirs.push(node_dir.to_string_lossy().to_string());
+    }
+    for d in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
+        path_dirs.push(d.to_string());
+    }
+    if let Ok(existing) = std::env::var("PATH") {
+        path_dirs.push(existing);
+    }
+    let path_env = path_dirs.join(":");
+
     let mut child = Command::new(&node)
         .arg(&script)
         .current_dir(&dir)
+        .env("PATH", &path_env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
