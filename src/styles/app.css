@@ -2513,6 +2513,15 @@ textarea.editable-input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-model {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chat-context-chip {
   flex: none;
   display: flex;

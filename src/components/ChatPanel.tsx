@@ -22,6 +22,7 @@ export function ChatPanel({
   const [input, setInput] = useState(s.chatSeed || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [model, setModel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const ready = library ? s.filtered.length > 0 : !!paper;
@@ -50,7 +51,8 @@ export function ChatPanel({
         });
         scrollDown();
       },
-      onDone: () => {
+      onDone: (info?: { model: string | null }) => {
+        if (info?.model) setModel(info.model);
         setBusy(false);
         scrollDown();
       },
@@ -90,6 +92,11 @@ export function ChatPanel({
           <div className="chat-sub">
             {library ? `${s.filtered.length} papers in “${s.filterTitle}”` : paper?.title ?? "No paper selected"}
           </div>
+          {model && (
+            <div className="chat-model" title="Model used for the last response">
+              Model: {model}
+            </div>
+          )}
         </div>
         <button className="modal-x" onClick={s.closeChat}>×</button>
       </div>
