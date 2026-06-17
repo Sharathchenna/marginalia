@@ -7,7 +7,15 @@ import { askLibrary, chatAboutPaper, isAgentAvailable, type ChatTurn } from "../
 // Chat with Claude — about the selected/open paper, or across the whole library
 // in view. Conversation state is local to the panel. Renders either as a floating
 // drawer (default) or embedded in the reader's right sidebar (`embedded`).
-export function ChatPanel({ store: s, embedded }: { store: Store; embedded?: boolean }) {
+export function ChatPanel({
+  store: s,
+  embedded,
+  width,
+}: {
+  store: Store;
+  embedded?: boolean;
+  width?: number;
+}) {
   const library = s.chatScope === "library";
   const paper = library ? null : s.screen === "reader" ? s.readerPaper : s.current;
   const [messages, setMessages] = useState<ChatTurn[]>([]);
@@ -72,7 +80,10 @@ export function ChatPanel({ store: s, embedded }: { store: Store; embedded?: boo
   };
 
   return (
-    <div className={embedded ? "chat-sidebar" : "chat-drawer"}>
+    <div
+      className={embedded ? "chat-sidebar" : "chat-drawer"}
+      style={embedded && width ? { width } : undefined}
+    >
       <div className="chat-head">
         <div style={{ minWidth: 0 }}>
           <div className="chat-title">{library ? "Ask your library" : "Ask about this paper"}</div>

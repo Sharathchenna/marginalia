@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { PDFDocumentProxy } from "pdfjs-dist";
@@ -27,6 +27,19 @@ const MAX_ZOOM = 4;
 const THEMES = ["light", "sepia", "night"] as const;
 type PdfTheme = (typeof THEMES)[number];
 
+// Resizable side panels (persisted in localStorage).
+const LEFT_MIN = 80, LEFT_MAX = 380, LEFT_DEFAULT = 108;
+const RIGHT_MIN = 300, RIGHT_MAX = 680, RIGHT_DEFAULT = 380;
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+function readW(key: string, def: number, lo: number, hi: number): number {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return v ? clamp(v, lo, hi) : def;
+  } catch {
+    return def;
+  }
+}
+
 interface Selection {
   text: string;
   page: number;
@@ -50,8 +63,38 @@ export function Reader({ store: s }: { store: Store }) {
   const [sel, setSel] = useState<Selection | null>(null);
   const [aspect, setAspect] = useState(0.77); // width/height, updated on render
   const [pageDraft, setPageDraft] = useState("1");
+  const [leftW, setLeftW] = useState(() => readW("marg.leftW", LEFT_DEFAULT, LEFT_MIN, LEFT_MAX));
+  const [rightW, setRightW] = useState(() => readW("marg.rightW", RIGHT_DEFAULT, RIGHT_MIN, RIGHT_MAX));
   const scrollRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+
+  // Drag a panel edge to resize; persist the final width.
+  const startResize = useCallback(
+    (e: ReactMouseEvent, side: "left" | "right") => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const left0 = leftW;
+      const right0 = rightW;
+      const onMove = (ev: MouseEvent) => {
+        if (side === "left") {
+          setLeftW(clamp(left0 + (ev.clientX - startX), LEFT_MIN, LEFT_MAX));
+        } else {
+          setRightW(clamp(right0 - (ev.clientX - startX), RIGHT_MIN, RIGHT_MAX));
+        }
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [leftW, rightW],
+  );
 
   const paperId = rp?.id;
   const width = Math.round(BASE_WIDTH * zoom);
@@ -133,6 +176,22 @@ export function Reader({ store: s }: { store: Store }) {
     setPageDraft(String(page));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
+
+  // persist panel widths
+  useEffect(() => {
+    try {
+      localStorage.setItem("marg.leftW", String(leftW));
+    } catch {
+      /* ignore */
+    }
+  }, [leftW]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("marg.rightW", String(rightW));
+    } catch {
+      /* ignore */
+    }
+  }, [rightW]);
 
   // track current page on scroll (continuous mode) + dismiss selection popover
   useEffect(() => {
@@ -228,7 +287,7 @@ export function Reader({ store: s }: { store: Store }) {
   return (
     <main className="reader">
       {/* left panel: pages / outline */}
-      <div className="thumbs">
+      <div className="thumbs" style={{ width: leftW }}>
         <div className="thumbs-head">
           <button className="back-btn" onClick={() => s.goScreen("library")}>
             <ChevronLeftIcon size={13} />
@@ -256,6 +315,8 @@ export function Reader({ store: s }: { store: Store }) {
           </div>
         )}
       </div>
+
+      <div className="col-resizer" onMouseDown={(e) => startResize(e, "left")} title="Drag to resize" />
 
       {/* reading pane */}
       <section className="reading-col">
@@ -438,10 +499,13 @@ export function Reader({ store: s }: { store: Store }) {
       )}
 
       {/* right sidebar: chat takes priority when open, else annotations */}
+      {(s.chatOpen || s.annOpen) && (
+        <div className="col-resizer" onMouseDown={(e) => startResize(e, "right")} title="Drag to resize" />
+      )}
       {s.chatOpen ? (
-        <ChatPanel store={s} embedded />
+        <ChatPanel store={s} embedded width={rightW} />
       ) : s.annOpen ? (
-        <aside className="ann-sidebar">
+        <aside className="ann-sidebar" style={{ width: rightW }}>
           <div className="ann-head">
             <span className="title">Annotations</span>
             <span className="count-pill">{rp.hl.length}</span>

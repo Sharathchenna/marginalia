@@ -1233,6 +1233,29 @@ textarea.editable-input {
   flex-direction: column;
   min-height: 0;
 }
+/* Drag handle between the reading pane and a side panel. Sits in flow, 6px wide,
+   with a centered hairline that brightens on hover/drag. */
+.col-resizer {
+  flex: none;
+  width: 6px;
+  margin: 0 -3px; /* overlap the panel border so it's easy to grab */
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 6;
+}
+.col-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.col-resizer:hover::after,
+.col-resizer:active::after {
+  background: var(--accent);
+}
 .thumbs-head {
   height: 44px;
   flex: none;
