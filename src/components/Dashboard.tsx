@@ -105,10 +105,18 @@ export function Dashboard({ store: s }: { store: Store }) {
           </section>
         )}
 
-        <div style={{ display: "flex", gap: 9, marginTop: 28 }}>
+        <div style={{ display: "flex", gap: 9, marginTop: 28, flexWrap: "wrap" }}>
           <button className="btn-primary" onClick={s.importFiles}>Import PDFs</button>
           <button className="btn-ghost" onClick={() => s.openDiscover()}>Discover papers</button>
           <button className="btn-ghost" onClick={s.openIdentifier}>Add by ID</button>
+          <button
+            className="btn-ghost"
+            disabled={s.bulkBusy || stats.total === 0}
+            onClick={s.autoTagUntagged}
+            title="Let Claude tag untagged papers and file them into collections by topic"
+          >
+            {s.bulkBusy ? <span className="spinner" /> : "🏷"} Auto-tag all
+          </button>
         </div>
       </div>
     </main>
