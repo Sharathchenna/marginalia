@@ -1,0 +1,26 @@
+[package]
+name = "marginalia"
+version = "0.1.0"
+description = "Local-first research paper manager"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "marginalia_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+# SQLite with FTS5 (bundled amalgamation enables FTS5 by default)
+rusqlite = { version = "0.32", features = ["bundled"] }
+# HTTP for DOI / arXiv metadata lookup + PDF download
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+# Filesystem watching for watch folders
+notify = "6"

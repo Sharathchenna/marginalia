@@ -1,0 +1,144 @@
+// SQLite persistence for the library. Papers are stored as JSON blobs (the same
+// shape the frontend uses) plus an FTS5 index over their text for fast search.
+use rusqlite::{params, Connection};
+use serde_json::{json, Value};
+
+pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    migrate(&conn)?;
+    Ok(conn)
+}
+
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS papers (
+            id    TEXT PRIMARY KEY,
+            json  TEXT NOT NULL,
+            added_ts INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
+            id UNINDEXED, title, authors, abstract, tags
+        );
+        CREATE TABLE IF NOT EXISTS kv (
+            key TEXT PRIMARY KEY,
+            json TEXT NOT NULL
+        );
+        "#,
+    )
+}
+
+fn fts_fields(p: &Value) -> (String, String, String, String, String) {
+    let s = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let id = s("id");
+    let title = s("title");
+    let authors = format!("{} {}", s("authors"), s("authorsFull"));
+    let abstract_ = s("abstract");
+    let tags = p
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default();
+    (id, title, authors, abstract_, tags)
+}
+
+pub fn upsert_paper(conn: &Connection, p: &Value) -> rusqlite::Result<()> {
+    let (id, title, authors, abstract_, tags) = fts_fields(p);
+    let added_ts = p.get("addedTs").and_then(Value::as_i64).unwrap_or(0);
+    conn.execute(
+        "INSERT INTO papers(id, json, added_ts) VALUES(?1, ?2, ?3)
+         ON CONFLICT(id) DO UPDATE SET json=excluded.json, added_ts=excluded.added_ts",
+        params![id, p.to_string(), added_ts],
+    )?;
+    conn.execute("DELETE FROM papers_fts WHERE id = ?1", params![id])?;
+    conn.execute(
+        "INSERT INTO papers_fts(id, title, authors, abstract, tags) VALUES(?1,?2,?3,?4,?5)",
+        params![id, title, authors, abstract_, tags],
+    )?;
+    Ok(())
+}
+
+pub fn replace_papers(conn: &Connection, papers: &[Value]) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM papers", [])?;
+    conn.execute("DELETE FROM papers_fts", [])?;
+    for p in papers {
+        upsert_paper(conn, p)?;
+    }
+    Ok(())
+}
+
+pub fn list_papers(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
+    let mut stmt = conn.prepare("SELECT json FROM papers ORDER BY added_ts DESC")?;
+    let rows = stmt.query_map([], |row| {
+        let s: String = row.get(0)?;
+        Ok(serde_json::from_str::<Value>(&s).unwrap_or(json!({})))
+    })?;
+    rows.collect()
+}
+
+pub fn get_paper(conn: &Connection, id: &str) -> rusqlite::Result<Option<Value>> {
+    let mut stmt = conn.prepare("SELECT json FROM papers WHERE id = ?1")?;
+    let mut rows = stmt.query(params![id])?;
+    if let Some(row) = rows.next()? {
+        let s: String = row.get(0)?;
+        Ok(serde_json::from_str(&s).ok())
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn update_paper(conn: &Connection, id: &str, patch: &Value) -> rusqlite::Result<()> {
+    if let Some(mut existing) = get_paper(conn, id)? {
+        if let (Some(obj), Some(p)) = (existing.as_object_mut(), patch.as_object()) {
+            for (k, v) in p {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+        upsert_paper(conn, &existing)?;
+    }
+    Ok(())
+}
+
+pub fn delete_paper(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM papers WHERE id = ?1", params![id])?;
+    conn.execute("DELETE FROM papers_fts WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn search(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Value>> {
+    let mut stmt = conn.prepare(
+        "SELECT p.json FROM papers_fts f JOIN papers p ON p.id = f.id
+         WHERE papers_fts MATCH ?1 ORDER BY rank",
+    )?;
+    let q = format!("{}*", query.replace('"', " "));
+    let rows = stmt.query_map(params![q], |row| {
+        let s: String = row.get(0)?;
+        Ok(serde_json::from_str::<Value>(&s).unwrap_or(json!({})))
+    })?;
+    rows.collect()
+}
+
+pub fn get_kv(conn: &Connection, key: &str) -> rusqlite::Result<Option<Value>> {
+    let mut stmt = conn.prepare("SELECT json FROM kv WHERE key = ?1")?;
+    let mut rows = stmt.query(params![key])?;
+    if let Some(row) = rows.next()? {
+        let s: String = row.get(0)?;
+        Ok(serde_json::from_str(&s).ok())
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn set_kv(conn: &Connection, key: &str, value: &Value) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO kv(key, json) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET json=excluded.json",
+        params![key, value.to_string()],
+    )?;
+    Ok(())
+}
