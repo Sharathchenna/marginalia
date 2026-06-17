@@ -46,8 +46,9 @@ export function Dashboard({ store: s }: { store: Store }) {
           <div className="dash-banner">
             <span>
               {s.counts.untagged} paper{s.counts.untagged === 1 ? "" : "s"} have no tags.
-              Let Claude categorise them — it reuses your existing tags and fills in
-              missing authors/venue from the PDF.
+              Let Claude categorise them — it reuses your existing tags, fills in
+              missing authors/venue from the PDF, and files each paper into a
+              collection by topic.
             </span>
             <button className="btn-primary" disabled={s.bulkBusy} onClick={s.autoTagUntagged}>
               {s.bulkBusy ? <span className="spinner" /> : "🏷"} Auto-tag all

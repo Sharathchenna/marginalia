@@ -51,6 +51,30 @@ function enrich(patch: Partial<Paper>, p: Paper, m: AutoTagResult): void {
   if (badVenue && m.venue && m.venue !== "—") patch.venue = m.venue;
 }
 
+const COLLECTION_COLORS = ["#4B57D6", "#2E9E6B", "#E0A23A", "#C0395E", "#7C84FF"];
+
+// File a paper into the collection matching `category` (case-insensitive),
+// creating the collection if none exists yet. Pure — returns updated collections,
+// so it can be folded over a batch before a single persist. `seq` keeps generated
+// ids unique within one synchronous batch (Date.now() alone can collide).
+function fileInCategory(cols: Collection[], category: string, paperId: string, seq = 0): Collection[] {
+  const name = category.trim();
+  if (!name) return cols;
+  const idx = cols.findIndex((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (idx >= 0) {
+    const c = cols[idx];
+    if (c.ids.includes(paperId)) return cols;
+    const next = cols.slice();
+    next[idx] = { ...c, ids: [...c.ids, paperId] };
+    return next;
+  }
+  const id = "col-" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now().toString(36) + seq;
+  return [
+    ...cols,
+    { id, name, color: COLLECTION_COLORS[cols.length % COLLECTION_COLORS.length], indent: "0", ids: [paperId] },
+  ];
+}
+
 // A library record for a PDF discovered on disk (title = filename for now).
 function filePaper(f: ScannedPdf): Paper {
   return {
@@ -820,7 +844,9 @@ export function useStore() {
         const patch: Partial<Paper> = { tags: [...new Set([...(p.tags || []), ...add])] };
         enrich(patch, p, m);
         patchPaper(id, patch);
-        showToast("Categorised ✨");
+        // Auto-file into a collection named after the AI category.
+        if (m.category) persistCollections(fileInCategory(collections, m.category, id));
+        showToast(m.category ? `Filed in “${m.category}” ✨` : "Categorised ✨");
       } catch (e) {
         showToast(e instanceof Error ? e.message : "Tagging failed");
       } finally {
@@ -838,6 +864,8 @@ export function useStore() {
       setBulkBusy(true);
       let done = 0;
       let vocab = [...new Set(papers.flatMap((x) => x.tags))];
+      let cols = collections;
+      const filed = new Set<string>();
       for (const p of targets) {
         try {
           const needAuthors = !p.authorsFull || !p.authors || p.authors === "Unknown";
@@ -847,6 +875,12 @@ export function useStore() {
           const patch: Partial<Paper> = { tags: [...new Set(add)] };
           enrich(patch, p, m);
           patchPaper(p.id, patch);
+          // Auto-file into a collection named after the AI category (one persist
+          // at the end so the batch doesn't thrash the store).
+          if (m.category) {
+            cols = fileInCategory(cols, m.category, p.id, done);
+            filed.add(m.category);
+          }
           vocab = [...new Set([...vocab, ...add])];
           done++;
           if (done % 3 === 0) showToast(`Categorised ${done}/${targets.length}…`);
@@ -854,8 +888,13 @@ export function useStore() {
           /* skip a failure, keep going */
         }
       }
+      if (cols !== collections) persistCollections(cols);
       setBulkBusy(false);
-      showToast(`Auto-tagged ${done} paper${done === 1 ? "" : "s"} ✨`);
+      showToast(
+        filed.size > 0
+          ? `Auto-tagged ${done} paper${done === 1 ? "" : "s"} into ${filed.size} collection${filed.size === 1 ? "" : "s"} ✨`
+          : `Auto-tagged ${done} paper${done === 1 ? "" : "s"} ✨`,
+      );
     },
     summarize: async (id: string) => {
       const p = papers.find((x) => x.id === id);
