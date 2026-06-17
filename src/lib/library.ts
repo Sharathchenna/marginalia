@@ -88,6 +88,43 @@ export async function importPdf(src: string, libDir: string): Promise<string> {
 }
 
 /**
+ * Ensure a paper's PDF exists locally and return its absolute path (native only).
+ * Downloads from arXiv / a remote `pdfUrl` into the library folder on demand and
+ * calls `onStored(filename)` so it's cached. Returns undefined when there's no
+ * PDF source, we're not native, or a download fails — callers degrade gracefully
+ * (e.g. summarise from the abstract instead).
+ */
+export async function ensureLocalPdfPath(
+  paper: Paper,
+  libDir: string,
+  onStored: (filename: string) => void,
+): Promise<string | undefined> {
+  if (!isTauri() || !libDir) return undefined;
+  if (paper.file) return joinPath(libDir, paper.file);
+  try {
+    if (paper.pdfUrl) {
+      const filename = pdfUrlFilename(paper.pdfUrl);
+      await invoke<string>("download_pdf", { url: paper.pdfUrl, dir: libDir, filename });
+      onStored(filename);
+      return joinPath(libDir, filename);
+    }
+    if (paper.arxiv && paper.arxiv !== "—") {
+      const filename = `${paper.arxiv}.pdf`;
+      await invoke<string>("download_pdf", {
+        url: `https://arxiv.org/pdf/${paper.arxiv}`,
+        dir: libDir,
+        filename,
+      });
+      onStored(filename);
+      return joinPath(libDir, filename);
+    }
+  } catch {
+    /* download failed (offline / gated) — caller falls back */
+  }
+  return undefined;
+}
+
+/**
  * Resolve a paper to a pdf.js source. May download an arXiv PDF into the library
  * folder on first open and call `onStored(filename)` so it can be cached.
  */

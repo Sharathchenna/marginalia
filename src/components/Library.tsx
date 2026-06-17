@@ -297,15 +297,17 @@ function DetailPanel({ store: s }: { store: Store }) {
             <button className="mini-btn" disabled={busy} onClick={() => s.autoTag(cur.id)}>
               {busy ? <span className="spinner" /> : "🏷"} Auto-tag
             </button>
-            {cur.file && (
-              <>
-                <button className="mini-btn" disabled={busy} onClick={() => s.extractMetadata(cur.id)}>
-                  {busy ? <span className="spinner" /> : "✨"} Extract
-                </button>
-                <button className="mini-btn" disabled={busy} onClick={() => s.summarize(cur.id)}>
-                  {busy ? <span className="spinner" /> : "✨"} Summarize
-                </button>
-              </>
+            {/* PDF source = a local file OR a downloadable arXiv / remote PDF.
+                Extract needs a PDF; Summarize also works from just the abstract. */}
+            {(cur.file || (cur.arxiv && cur.arxiv !== "—") || cur.pdfUrl) && (
+              <button className="mini-btn" disabled={busy} onClick={() => s.extractMetadata(cur.id)}>
+                {busy ? <span className="spinner" /> : "✨"} Extract
+              </button>
+            )}
+            {(cur.file || (cur.arxiv && cur.arxiv !== "—") || cur.pdfUrl || cur.abstract) && (
+              <button className="mini-btn" disabled={busy} onClick={() => s.summarize(cur.id)}>
+                {busy ? <span className="spinner" /> : "✨"} Summarize
+              </button>
             )}
             <button className="mini-btn" onClick={() => s.exportPaperMarkdown(cur.id)}>
               ↗ Obsidian

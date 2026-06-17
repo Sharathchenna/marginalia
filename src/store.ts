@@ -14,6 +14,7 @@ import { repo, type Settings } from "./lib/repo";
 import { invoke, isTauri, detectGlassPlatform } from "./lib/tauri";
 import {
   chooseLibraryFolder,
+  ensureLocalPdfPath,
   importPdf,
   pickPdfFiles,
   scanLibrary,
@@ -814,13 +815,17 @@ export function useStore() {
     // ---- AI: extract metadata / summarize ----
     extractMetadata: async (id: string) => {
       const p = papers.find((x) => x.id === id);
-      const pdf = p && pdfPathFor(p);
-      if (!p || !pdf) {
-        showToast("No local PDF to read for this paper.");
-        return;
-      }
+      if (!p) return;
       setAiBusyId(id);
       try {
+        // Fetch the PDF if it isn't cached yet (papers added by ID/Discovery).
+        const pdf = await ensureLocalPdfPath(p, libraryLocation, (file) =>
+          patchPaper(p.id, { file }),
+        );
+        if (!pdf) {
+          showToast("No PDF available to read for this paper.");
+          return;
+        }
         const m = await extractMetadata(pdf, p);
         const patch: Partial<Paper> = {};
         if (typeof m.title === "string" && m.title) patch.title = m.title;
@@ -915,7 +920,10 @@ export function useStore() {
       if (!p) return;
       setAiBusyId(id);
       let acc = "";
-      await summarizePaper(p, pdfPathFor(p), {
+      // Use the PDF when we can fetch it (richer summary); otherwise the sidecar
+      // summarises from the abstract/metadata, so abstract-only papers work too.
+      const pdf = await ensureLocalPdfPath(p, libraryLocation, (file) => patchPaper(p.id, { file }));
+      await summarizePaper(p, pdf, {
         onDelta: (t) => {
           acc += t;
         },
