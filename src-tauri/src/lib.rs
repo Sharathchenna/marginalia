@@ -127,6 +127,26 @@ fn lookup_identifier(identifier: String) -> Result<Value, String> {
     metadata::lookup(&identifier)
 }
 
+/// Open an external URL in the system browser (PDF hyperlinks). Only http(s)/mailto.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:")) {
+        return Err("Refused to open non-web URL".into());
+    }
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(target_os = "linux")]
+    let mut cmd = std::process::Command::new("xdg-open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    };
+    cmd.arg(&url);
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 // ---------- semantic search (Voyage embeddings) ----------
 
 /// Read the embedding key + model from saved settings.
@@ -451,6 +471,7 @@ pub fn run() {
             get_settings,
             save_settings,
             lookup_identifier,
+            open_url,
             start_watch,
             ensure_dir,
             write_text_file,

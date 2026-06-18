@@ -12,13 +12,14 @@ import {
   getOutline,
   loadPdfSource,
   paintHighlights,
+  renderLinkLayer,
   renderPage,
   renderTextLayer,
   searchInPdf,
   type OutlineNode,
 } from "../lib/pdf";
 import { resolvePdf } from "../lib/library";
-import { isTauri } from "../lib/tauri";
+import { invoke, isTauri } from "../lib/tauri";
 import { ChatPanel } from "./ChatPanel";
 import { AnnPanelIcon, ChevronLeftIcon, SearchIcon, StickyIcon } from "../icons";
 
@@ -119,6 +120,15 @@ export function Reader({ store: s }: { store: Store }) {
     },
     [numPages, cont],
   );
+
+  // Open an external link from the PDF in the system browser (native) / new tab.
+  const openExternal = useCallback((url: string) => {
+    if (isTauri()) {
+      void invoke("open_url", { url }).catch(() => window.open(url, "_blank", "noopener"));
+    } else {
+      window.open(url, "_blank", "noopener");
+    }
+  }, []);
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(MAX_ZOOM, +(z + 0.2).toFixed(2))), []);
   const zoomOut = useCallback(() => setZoom((z) => Math.max(MIN_ZOOM, +(z - 0.2).toFixed(2))), []);
@@ -441,6 +451,8 @@ export function Reader({ store: s }: { store: Store }) {
               highlights={rp.hl.filter((h) => h.page === page)}
               onSelect={onSelect}
               onAspect={setAspect}
+              onLink={goToPage}
+              onExternal={openExternal}
               rootRef={scrollRef}
             />
           )}
@@ -455,6 +467,8 @@ export function Reader({ store: s }: { store: Store }) {
                   highlights={rp.hl.filter((h) => h.page === n)}
                   onSelect={onSelect}
                   onAspect={setAspect}
+                  onLink={goToPage}
+                  onExternal={openExternal}
                   rootRef={scrollRef}
                   lazy
                 />
@@ -583,6 +597,8 @@ function PageView({
   highlights,
   onSelect,
   onAspect,
+  onLink,
+  onExternal,
   rootRef,
   lazy,
 }: {
@@ -592,12 +608,15 @@ function PageView({
   highlights: Highlight[];
   onSelect: (text: string, page: number, x: number, y: number) => void;
   onAspect: (a: number) => void;
+  onLink: (page: number) => void;
+  onExternal: (url: string) => void;
   rootRef?: RefObject<HTMLElement | null>;
   lazy?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
+  const linkRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(!lazy);
 
   useEffect(() => {
@@ -627,6 +646,9 @@ function PageView({
         if (alive && textRef.current) {
           await renderTextLayer(pdf, pageNum, textRef.current, viewport);
           paintHighlights(textRef.current, highlights);
+        }
+        if (alive && linkRef.current) {
+          await renderLinkLayer(pdf, pageNum, linkRef.current, viewport, onLink, onExternal);
         }
       } catch {
         /* superseded — ignore */
@@ -661,6 +683,7 @@ function PageView({
     >
       <canvas ref={canvasRef} />
       <div ref={textRef} className="textLayer" />
+      <div ref={linkRef} className="linkLayer" />
     </div>
   );
 }

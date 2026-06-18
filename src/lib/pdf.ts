@@ -74,6 +74,59 @@ export async function renderTextLayer(
   await textLayer.render();
 }
 
+// Render clickable link annotations (external URLs + internal section jumps)
+// over a page, positioned to match the canvas. Internal links call `onInternal`
+// with the resolved 1-based page number.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function renderLinkLayer(
+  pdf: PDFDocumentProxy,
+  pageNum: number,
+  container: HTMLElement,
+  viewport: pdfjs.PageViewport,
+  onInternal: (page: number) => void,
+  onExternal: (url: string) => void,
+): Promise<void> {
+  container.innerHTML = "";
+  container.style.width = `${Math.floor(viewport.width)}px`;
+  container.style.height = `${Math.floor(viewport.height)}px`;
+  const page = await pdf.getPage(pageNum);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const annotations = (await page.getAnnotations({ intent: "display" })) as any[];
+  for (const a of annotations) {
+    const raw: string | undefined = a.url ?? a.unsafeUrl;
+    const url = raw && /^(https?:|mailto:)/i.test(raw) ? raw : undefined;
+    if (a.subtype !== "Link" || (!url && !a.dest)) continue;
+    const r = viewport.convertToViewportRectangle(a.rect);
+    const left = Math.min(r[0], r[2]);
+    const top = Math.min(r[1], r[3]);
+    const width = Math.abs(r[2] - r[0]);
+    const height = Math.abs(r[3] - r[1]);
+    const el = document.createElement("span");
+    el.className = "pdf-link";
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.width = `${width}px`;
+    el.style.height = `${height}px`;
+    if (url) {
+      el.title = url;
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        onExternal(url);
+      });
+    } else {
+      el.title = "Go to section";
+      const dest = a.dest;
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        void destToPage(pdf, dest).then((p) => {
+          if (p > 0) onInternal(p);
+        });
+      });
+    }
+    container.appendChild(el);
+  }
+}
+
 // Tint the text-layer spans that make up each highlight on this page. Matches by
 // whitespace-stripped text so it's robust to how the text layer segments words.
 export function paintHighlights(container: HTMLElement, highlights: Highlight[]): void {

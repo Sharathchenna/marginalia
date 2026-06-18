@@ -1692,6 +1692,24 @@ textarea.editable-input {
 .textLayer span::selection {
   background: var(--accent-line);
 }
+/* Clickable PDF hyperlinks (sits above the text layer; only the link rects
+   are interactive so text selection elsewhere still works). */
+.linkLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.linkLayer .pdf-link {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.linkLayer .pdf-link:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
 .thumb-wrap {
   position: relative;
   cursor: pointer;
