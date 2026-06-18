@@ -2,7 +2,17 @@ import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Store } from "../store";
-import { askLibrary, chatAboutPaper, isAgentAvailable, type ChatTurn } from "../lib/agent";
+import { askLibrary, chatAboutPaper, isAgentAvailable } from "../lib/agent";
+
+// A chat turn plus the (optional) streamed reasoning for assistant turns.
+type Turn = { role: "user" | "assistant"; text: string; thinking?: string };
+
+// Friendly label for a tool the agent invokes mid-answer.
+function toolLabel(name?: string): string {
+  if (name === "Read") return "Reading the PDF…";
+  if (!name || name === "tool") return "Using a tool…";
+  return `${name}…`;
+}
 
 // Chat with Claude — about the selected/open paper, or across the whole library
 // in view. Conversation state is local to the panel. Renders either as a floating
@@ -18,12 +28,20 @@ export function ChatPanel({
 }) {
   const library = s.chatScope === "library";
   const paper = library ? null : s.screen === "reader" ? s.readerPaper : s.current;
-  const [messages, setMessages] = useState<ChatTurn[]>([]);
+  const [messages, setMessages] = useState<Turn[]>([]);
   const [input, setInput] = useState(s.chatSeed || "");
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(""); // live activity (tool / thinking)
   const [error, setError] = useState("");
   const [model, setModel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const patchLast = (fn: (t: Turn) => Turn) =>
+    setMessages((m) => {
+      const next = [...m];
+      next[next.length - 1] = fn(next[next.length - 1]);
+      return next;
+    });
 
   const ready = library ? s.filtered.length > 0 : !!paper;
 
@@ -37,29 +55,39 @@ export function ChatPanel({
     if (!question || busy || !ready) return;
     setError("");
     setInput("");
-    const history = messages;
+    const history = messages.map((m) => ({ role: m.role, text: m.text }));
     setMessages((m) => [...m, { role: "user", text: question }, { role: "assistant", text: "" }]);
     setBusy(true);
+    setStatus("Thinking…");
     scrollDown();
 
     const handlers = {
       onDelta: (text: string) => {
-        setMessages((m) => {
-          const next = [...m];
-          next[next.length - 1] = { role: "assistant" as const, text: next[next.length - 1].text + text };
-          return next;
-        });
+        setStatus(""); // answer is flowing now
+        patchLast((t) => ({ ...t, text: t.text + text }));
+        scrollDown();
+      },
+      onThinkingStart: () => setStatus("Thinking…"),
+      onThinking: (text: string) => {
+        setStatus("Thinking…");
+        patchLast((t) => ({ ...t, thinking: (t.thinking ?? "") + text }));
+        scrollDown();
+      },
+      onTool: (info: { name?: string; phase: "start" | "done" }) => {
+        setStatus(info.phase === "start" ? toolLabel(info.name) : "Thinking…");
         scrollDown();
       },
       onDone: (info?: { model: string | null }) => {
         if (info?.model) setModel(info.model);
         setBusy(false);
+        setStatus("");
         scrollDown();
       },
       onError: (msg: string) => {
         setBusy(false);
+        setStatus("");
         setError(msg);
-        setMessages((m) => (m[m.length - 1]?.text === "" ? m.slice(0, -1) : m));
+        setMessages((m) => (m[m.length - 1]?.text === "" && !m[m.length - 1]?.thinking ? m.slice(0, -1) : m));
       },
     };
 
@@ -134,11 +162,19 @@ export function ChatPanel({
           if (m.role === "assistant") {
             return (
               <div key={i} className="chat-bubble assistant chat-md">
-                {m.text ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
-                ) : busy && isLast ? (
-                  <span className="chat-cursor">▍</span>
-                ) : null}
+                {m.thinking && (
+                  <details className="chat-thinking" open={busy && isLast && !m.text}>
+                    <summary>💭 Thinking</summary>
+                    <div className="chat-thinking-body">{m.thinking}</div>
+                  </details>
+                )}
+                {m.text && <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>}
+                {!m.text && busy && isLast && (
+                  <div className="chat-status">
+                    <span className="spinner" />
+                    <span>{status || "Thinking…"}</span>
+                  </div>
+                )}
               </div>
             );
           }

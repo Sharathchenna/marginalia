@@ -2742,6 +2742,40 @@ textarea.editable-input {
   color: var(--text-3);
   animation: pulse 1s infinite;
 }
+/* Live activity (thinking / reading the PDF) shown before tokens arrive. */
+.chat-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+/* Collapsible streamed reasoning. */
+.chat-thinking {
+  margin-bottom: 8px;
+  border-left: 2px solid var(--accent-line);
+  padding-left: 10px;
+}
+.chat-thinking > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-3);
+  list-style: none;
+  user-select: none;
+}
+.chat-thinking > summary::-webkit-details-marker {
+  display: none;
+}
+.chat-thinking-body {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-3);
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+}
 .chat-error {
   font-size: 12.5px;
   color: #c0395e;

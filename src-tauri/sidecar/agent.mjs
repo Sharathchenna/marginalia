@@ -139,6 +139,8 @@ async function main() {
     permissionMode: "dontAsk",
     settingSources: [], // don't pull in project CLAUDE.md / settings
     maxTurns: pdfPath ? 6 : 1, // allow a read → answer loop
+    // Stream raw deltas so the UI can show tokens, thinking, and tool use live.
+    includePartialMessages: true,
   };
   if (pdfPath) options.cwd = dirname(pdfPath);
   if (model) options.model = model;
@@ -149,15 +151,45 @@ async function main() {
       prompt: mode === "summarize" ? question : renderConversation(history, question),
       options,
     })) {
-      if (message.type === "assistant") {
-        const blocks = message.message?.content ?? [];
-        for (const b of blocks) {
-          if (b.type === "text" && b.text) {
+      // Live, token-level events (requires includePartialMessages).
+      if (message.type === "stream_event") {
+        const ev = message.event;
+        if (ev?.type === "content_block_start") {
+          const cb = ev.content_block;
+          if (cb?.type === "tool_use") emit({ type: "tool", name: cb.name || "tool", phase: "start" });
+          else if (cb?.type === "thinking") emit({ type: "thinking_start" });
+        } else if (ev?.type === "content_block_delta") {
+          const d = ev.delta;
+          if (d?.type === "text_delta" && d.text) {
             streamedText = true;
-            emit({ type: "delta", text: b.text });
+            emit({ type: "delta", text: d.text });
+          } else if (d?.type === "thinking_delta" && d.thinking) {
+            emit({ type: "thinking", text: d.thinking });
           }
         }
-      } else if (message.type === "result") {
+        continue;
+      }
+      // A tool finished (its result came back).
+      if (message.type === "user") {
+        const blocks = message.message?.content;
+        if (Array.isArray(blocks) && blocks.some((b) => b.type === "tool_result")) {
+          emit({ type: "tool", phase: "done" });
+        }
+        continue;
+      }
+      // Fallback: if partial streaming didn't fire, emit the full assistant text.
+      if (message.type === "assistant") {
+        if (!streamedText) {
+          for (const b of message.message?.content ?? []) {
+            if (b.type === "text" && b.text) {
+              streamedText = true;
+              emit({ type: "delta", text: b.text });
+            }
+          }
+        }
+        continue;
+      }
+      if (message.type === "result") {
         if (!streamedText && typeof message.result === "string") {
           emit({ type: "delta", text: message.result });
         }

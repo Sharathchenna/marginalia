@@ -20,6 +20,9 @@ export interface ChatHandlers {
   onDelta?: (text: string) => void;
   onMetadata?: (data: Record<string, unknown>) => void;
   onTags?: (data: AutoTagResult) => void;
+  onThinkingStart?: () => void;
+  onThinking?: (text: string) => void;
+  onTool?: (info: { name?: string; phase: "start" | "done" }) => void;
   onDone?: (info: { cost: number | null; model: string | null }) => void;
   onError?: (message: string) => void;
 }
@@ -78,6 +81,18 @@ async function runAgent(
         break;
       case "tags":
         handlers.onTags?.((p.data as AutoTagResult) ?? {});
+        break;
+      case "thinking_start":
+        handlers.onThinkingStart?.();
+        break;
+      case "thinking":
+        handlers.onThinking?.(String(p.text ?? ""));
+        break;
+      case "tool":
+        handlers.onTool?.({
+          name: p.name as string | undefined,
+          phase: (p.phase as "start" | "done") ?? "start",
+        });
         break;
       case "done":
         handlers.onDone?.({
