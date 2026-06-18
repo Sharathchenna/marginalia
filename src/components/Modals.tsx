@@ -106,6 +106,7 @@ export function AddByIdModal({ store: s }: { store: Store }) {
             <div className="id-examples">
               <span className="lbl">Examples:</span>
               <span className="ex" onClick={() => s.setIdText("arXiv:1706.03762")}>arXiv:1706.03762</span>
+              <span className="ex" onClick={() => s.setIdText("https://arxiv.org/abs/1706.03762")}>arxiv.org/abs/…</span>
               <span className="ex" onClick={() => s.setIdText("10.1038/nature16961")}>10.1038/nature16961</span>
               <span className="ex" onClick={() => s.setIdText("huggingface.co/papers/2310.06825")}>huggingface.co/papers/…</span>
             </div>

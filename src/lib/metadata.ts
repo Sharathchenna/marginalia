@@ -38,9 +38,10 @@ export function classifyIdentifier(raw: string): Kind {
     if (segs.length >= 2 && !reserved.includes(segs[0]))
       return { type: "hf", id: `${segs[0]}/${segs[1]}`, hfType: "model" };
   }
-  // arXiv URL
-  const arxUrl = s.match(/arxiv\.org\/abs\/([^\s?#]+)/i);
-  if (arxUrl) return { type: "arxiv", id: arxUrl[1].replace(/v\d+$/, "") };
+  // arXiv URL — abs page or direct PDF (e.g. arxiv.org/pdf/2310.06825v2.pdf)
+  const arxUrl = s.match(/arxiv\.org\/(?:abs|pdf)\/([^\s?#]+)/i);
+  if (arxUrl)
+    return { type: "arxiv", id: arxUrl[1].replace(/\.pdf$/i, "").replace(/v\d+$/, "") };
   // arXiv: prefix
   const arxPrefix = s.match(/arxiv:\s*([0-9.]+(v\d+)?)/i);
   if (arxPrefix) return { type: "arxiv", id: arxPrefix[1].replace(/v\d+$/, "") };

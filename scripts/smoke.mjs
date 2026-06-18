@@ -58,6 +58,8 @@ ok("APA text contains year", m.citationText(m.PAPERS[0], "APA").includes("2017")
 ok("arXiv prefix", JSON.stringify(m.classifyIdentifier("arXiv:1706.03762")) === JSON.stringify({ type: "arxiv", id: "1706.03762" }));
 ok("bare arXiv w/ version", m.classifyIdentifier("2310.06825v2").id === "2310.06825");
 ok("arXiv abs URL", m.classifyIdentifier("https://arxiv.org/abs/2310.06825").id === "2310.06825");
+ok("arXiv pdf URL", JSON.stringify(m.classifyIdentifier("https://arxiv.org/pdf/2310.06825")) === JSON.stringify({ type: "arxiv", id: "2310.06825" }));
+ok("arXiv pdf URL w/ .pdf + version", m.classifyIdentifier("https://arxiv.org/pdf/2310.06825v2.pdf").id === "2310.06825");
 ok("DOI", JSON.stringify(m.classifyIdentifier("10.1038/nature16961")) === JSON.stringify({ type: "doi", id: "10.1038/nature16961" }));
 ok("arXiv-minted DOI → arxiv", m.classifyIdentifier("10.48550/arXiv.1706.03762").type === "arxiv");
 ok("HF papers URL → arxiv", JSON.stringify(m.classifyIdentifier("https://huggingface.co/papers/2310.06825")) === JSON.stringify({ type: "arxiv", id: "2310.06825" }));
