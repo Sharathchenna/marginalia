@@ -52,11 +52,26 @@ function buildSystemPrompt(paper, pdfPath) {
     .filter(Boolean)
     .join("\n");
 
+  // The extracted body text (cached when the paper was opened) — the primary
+  // source for answering, so we don't depend on the model parsing the PDF.
+  const fullText = typeof p.fulltext === "string" ? p.fulltext.slice(0, 90000) : "";
+
   const lines = [
     "You are a research assistant inside Marginalia, a paper manager.",
     "The user wants to discuss the following paper. Answer their questions clearly and concisely.",
   ];
-  if (pdfPath) {
+  if (fullText) {
+    lines.push(
+      "The paper's full text is included below under === PAPER TEXT ===. Answer from it",
+      "directly — it's already here, so do NOT say you need to look it up or read a file.",
+    );
+    if (pdfPath) {
+      lines.push(
+        `The original PDF is also at ${pdfPath}; only use the Read tool if you need figures,`,
+        "tables, or layout the extracted text doesn't capture.",
+      );
+    }
+  } else if (pdfPath) {
     lines.push(
       `The full PDF is on disk at: ${pdfPath}`,
       "Use the Read tool to read it whenever the question needs the paper's actual content",
@@ -69,6 +84,7 @@ function buildSystemPrompt(paper, pdfPath) {
     );
   }
   lines.push("", "=== PAPER ===", meta || "(no metadata available)");
+  if (fullText) lines.push("", "=== PAPER TEXT ===", fullText);
   return lines.join("\n");
 }
 
