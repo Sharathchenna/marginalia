@@ -259,6 +259,10 @@ async function runLibraryChat(payload, model) {
     "synthesis, gaps. Cite papers by their title (and [number]) when relevant.",
     "If the library doesn't contain relevant work, say so. Be concise and specific.",
     "",
+    "IMPORTANT: Everything you need is in the LIBRARY list below — you have no tools",
+    "and cannot look anything up. Do NOT narrate actions or say things like \"let me",
+    "look at the papers\"; answer directly and immediately from the list.",
+    "",
     "=== LIBRARY ===",
     list || "(empty library)",
   ].join("\n");
@@ -268,21 +272,39 @@ async function runLibraryChat(payload, model) {
     allowedTools: [],
     permissionMode: "dontAsk",
     settingSources: [],
-    maxTurns: 1,
+    maxTurns: 2, // safety net so a stray lead-in turn can't truncate the answer
+    includePartialMessages: true,
   };
   if (model) options.model = model;
 
   let streamed = false;
   try {
     for await (const message of query({ prompt: renderConversation(history, question), options })) {
-      if (message.type === "assistant") {
-        for (const b of message.message?.content ?? []) {
-          if (b.type === "text" && b.text) {
+      if (message.type === "stream_event") {
+        const ev = message.event;
+        if (ev?.type === "content_block_delta") {
+          const d = ev.delta;
+          if (d?.type === "text_delta" && d.text) {
             streamed = true;
-            emit({ type: "delta", text: b.text });
+            emit({ type: "delta", text: d.text });
+          } else if (d?.type === "thinking_delta" && d.thinking) {
+            emit({ type: "thinking", text: d.thinking });
           }
         }
-      } else if (message.type === "result") {
+        continue;
+      }
+      if (message.type === "assistant") {
+        if (!streamed) {
+          for (const b of message.message?.content ?? []) {
+            if (b.type === "text" && b.text) {
+              streamed = true;
+              emit({ type: "delta", text: b.text });
+            }
+          }
+        }
+        continue;
+      }
+      if (message.type === "result") {
         if (!streamed && typeof message.result === "string") emit({ type: "delta", text: message.result });
         emit({ type: "done", cost: message.total_cost_usd ?? null, isError: !!message.is_error, model: message.model ?? null });
         return;
