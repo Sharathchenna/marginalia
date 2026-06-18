@@ -41,6 +41,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/huggingface/, ""),
       },
+      "/alphaxiv": {
+        target: "https://api.alphaxiv.org",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/alphaxiv/, ""),
+      },
     },
   },
 });

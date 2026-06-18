@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Store } from "../store";
 import type { Paper, ReadingStatus } from "../types";
+import { PaperRecommendations } from "./Recommendations";
 import { MoreIcon, SortIcon, StarIcon } from "../icons";
 
 function readDotStyle(p: Paper) {
@@ -427,6 +428,8 @@ function DetailPanel({ store: s }: { store: Store }) {
                 ))}
             </select>
           </div>
+
+          <PaperRecommendations store={s} paper={cur} />
 
           <div className="detail-section">
             <h3>Notes</h3>

@@ -17,6 +17,8 @@ export interface Settings {
   glass?: boolean;
   /** Model id for AI actions; "" / undefined = SDK default. */
   model?: string;
+  /** Optional alphaXiv API key for the personalized feed. */
+  alphaxivKey?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
