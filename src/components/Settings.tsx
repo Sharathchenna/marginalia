@@ -1,8 +1,11 @@
 import { useRef } from "react";
 import { exportLibrary } from "../lib/citation";
+import { isTauri } from "../lib/tauri";
 import type { Store } from "../store";
 import type { CiteStyle, Density } from "../types";
 import { FolderIcon } from "../icons";
+
+const EMBED_MODELS = ["voyage-3.5-lite", "voyage-3.5"];
 
 const CITE_STYLES: CiteStyle[] = ["APA", "MLA", "Chicago", "BibTeX"];
 const DENSITIES: Density[] = ["compact", "comfortable"];
@@ -130,6 +133,45 @@ export function Settings({ store: s }: { store: Store }) {
               ))}
             </div>
           </div>
+
+          {isTauri() && (
+            <div>
+              <h3>Semantic search</h3>
+              <p className="desc">
+                Embeddings power “Similar papers” and smarter library Q&amp;A. Paste a free{" "}
+                <a href="https://www.voyageai.com" target="_blank" rel="noreferrer">Voyage AI</a>{" "}
+                key, then build the index. Your papers’ text is sent to Voyage only when you build
+                it — nothing leaves your machine otherwise.
+              </p>
+              <input
+                className="id-input"
+                type="password"
+                placeholder="Voyage API key (pa-…)"
+                value={s.voyageKey}
+                onChange={(e) => s.setVoyageKey(e.target.value.trim())}
+              />
+              <div className="seg-group" style={{ marginTop: 9 }}>
+                {EMBED_MODELS.map((mm) => (
+                  <button
+                    key={mm}
+                    className="seg-pill"
+                    data-active={s.embedModel === mm}
+                    onClick={() => s.setEmbedModel(mm)}
+                  >
+                    {mm}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 9, marginTop: 10, alignItems: "center" }}>
+                <button className="mini-btn" disabled={s.indexing || !s.voyageKey} onClick={s.buildIndex}>
+                  {s.indexing ? <span className="spinner" /> : "Build index"}
+                </button>
+                <span className="desc" style={{ margin: 0 }}>
+                  {s.embedStatus.embedded} of {s.papers.length} papers indexed
+                </span>
+              </div>
+            </div>
+          )}
 
           <div>
             <h3>Library</h3>

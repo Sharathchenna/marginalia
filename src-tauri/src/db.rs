@@ -24,7 +24,70 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             key TEXT PRIMARY KEY,
             json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS embeddings (
+            paper_id TEXT PRIMARY KEY,
+            model TEXT NOT NULL,
+            dim   INTEGER NOT NULL,
+            hash  TEXT NOT NULL,
+            vec   BLOB NOT NULL
+        );
         "#,
+    )
+}
+
+// ---- embeddings (semantic search) ----
+
+/// The (model, hash) an existing vector was built from, so callers can skip
+/// re-embedding papers whose text hasn't changed.
+pub fn embedding_meta(conn: &Connection, id: &str) -> rusqlite::Result<Option<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT model, hash FROM embeddings WHERE paper_id = ?1")?;
+    let mut rows = stmt.query(params![id])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some((row.get(0)?, row.get(1)?)))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn upsert_embedding(
+    conn: &Connection,
+    id: &str,
+    model: &str,
+    dim: usize,
+    hash: &str,
+    vec: &[u8],
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO embeddings(paper_id, model, dim, hash, vec) VALUES(?1,?2,?3,?4,?5)
+         ON CONFLICT(paper_id) DO UPDATE SET model=excluded.model, dim=excluded.dim,
+           hash=excluded.hash, vec=excluded.vec",
+        params![id, model, dim as i64, hash, vec],
+    )?;
+    Ok(())
+}
+
+/// All (paper_id, raw vec bytes) for a given model, for in-memory cosine search.
+pub fn all_embeddings(conn: &Connection, model: &str) -> rusqlite::Result<Vec<(String, Vec<u8>)>> {
+    let mut stmt = conn.prepare("SELECT paper_id, vec FROM embeddings WHERE model = ?1")?;
+    let rows = stmt.query_map(params![model], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect()
+}
+
+pub fn get_embedding_vec(conn: &Connection, id: &str, model: &str) -> rusqlite::Result<Option<Vec<u8>>> {
+    let mut stmt = conn.prepare("SELECT vec FROM embeddings WHERE paper_id = ?1 AND model = ?2")?;
+    let mut rows = stmt.query(params![id, model])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn embedding_count(conn: &Connection, model: &str) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM embeddings WHERE model = ?1",
+        params![model],
+        |r| r.get(0),
     )
 }
 
@@ -107,6 +170,7 @@ pub fn update_paper(conn: &Connection, id: &str, patch: &Value) -> rusqlite::Res
 pub fn delete_paper(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM papers WHERE id = ?1", params![id])?;
     conn.execute("DELETE FROM papers_fts WHERE id = ?1", params![id])?;
+    conn.execute("DELETE FROM embeddings WHERE paper_id = ?1", params![id])?;
     Ok(())
 }
 

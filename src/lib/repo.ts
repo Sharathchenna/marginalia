@@ -17,6 +17,10 @@ export interface Settings {
   glass?: boolean;
   /** Model id for AI actions; "" / undefined = SDK default. */
   model?: string;
+  /** Semantic search: provider ("off" | "voyage"), embedding model, API key. */
+  embedProvider?: string;
+  embedModel?: string;
+  voyageKey?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

@@ -25,7 +25,15 @@ import { autoTag as agentAutoTag, extractMetadata, summarizePaper, setAgentModel
 import type { AutoTagResult } from "./lib/agent";
 import { exportLibrary as exportLibraryMd, exportPaper as exportPaperMd } from "./lib/markdown";
 import { parseBibliography } from "./lib/citation";
-import { searchPapers } from "./lib/search";
+import { retrieveForChat, searchPapers } from "./lib/search";
+import {
+  buildEmbedText,
+  embedPapers,
+  embeddingStatus,
+  semanticSearch,
+  similarPapers as similarPapersCmd,
+  type EmbedStatus,
+} from "./lib/embeddings";
 
 // Native window-material the current platform supports (computed once).
 const GLASS_PLATFORM = detectGlassPlatform();
@@ -122,6 +130,12 @@ export function useStore() {
   const [glass, setGlassState] = useState(GLASS_PLATFORM !== "off");
   // Model for all AI actions ("" = SDK/account default).
   const [model, setModelState] = useState("");
+  // Semantic search (Voyage embeddings).
+  const [embedProvider, setEmbedProviderState] = useState("off");
+  const [embedModel, setEmbedModelState] = useState("voyage-3.5-lite");
+  const [voyageKey, setVoyageKeyState] = useState("");
+  const [embedStatus, setEmbedStatus] = useState<EmbedStatus>({ embedded: 0, model: "", hasKey: false });
+  const [indexing, setIndexing] = useState(false);
 
   // ----- transient UI state -----
   const [filter, setFilter] = useState<Filter>("all");
@@ -176,6 +190,10 @@ export function useStore() {
         setModelState(st.model);
         setAgentModel(st.model);
       }
+      if (typeof st.embedProvider === "string") setEmbedProviderState(st.embedProvider);
+      if (typeof st.embedModel === "string") setEmbedModelState(st.embedModel);
+      if (typeof st.voyageKey === "string") setVoyageKeyState(st.voyageKey);
+      void embeddingStatus().then(setEmbedStatus);
       if (ps.length && !ps.some((p) => p.id === "attention")) {
         setSelectedId(ps[0].id);
         setReaderId(ps[0].id);
@@ -392,6 +410,11 @@ export function useStore() {
     glass,
     glassMode: (glass ? GLASS_PLATFORM : "off") as "full" | "acrylic" | "off",
     model,
+    embedProvider,
+    embedModel,
+    voyageKey,
+    embedStatus,
+    indexing,
     filter,
     selectedId,
     sel,
@@ -440,6 +463,68 @@ export function useStore() {
       setModelState(m);
       setAgentModel(m);
       persistSettings({ model: m });
+    },
+
+    // ---- semantic search (Voyage embeddings) ----
+    setVoyageKey: (k: string) => {
+      setVoyageKeyState(k);
+      persistSettings({ voyageKey: k, embedProvider: k ? "voyage" : "off" });
+      setEmbedProviderState(k ? "voyage" : "off");
+      void embeddingStatus().then(setEmbedStatus);
+    },
+    setEmbedModel: (m: string) => {
+      setEmbedModelState(m);
+      persistSettings({ embedModel: m });
+      void embeddingStatus().then(setEmbedStatus);
+    },
+    // Embed every paper (skips unchanged ones), in batches, with progress.
+    buildIndex: async () => {
+      if (!isTauri() || indexing) return;
+      const items = papers.map((p) => ({ id: p.id, text: buildEmbedText(p) }));
+      if (!items.length) {
+        showToast("No papers to index");
+        return;
+      }
+      setIndexing(true);
+      let embedded = 0;
+      let skipped = 0;
+      try {
+        for (let i = 0; i < items.length; i += 50) {
+          const res = await embedPapers(items.slice(i, i + 50));
+          embedded += res.embedded;
+          skipped += res.skipped;
+          showToast(`Indexing… ${Math.min(i + 50, items.length)}/${items.length}`);
+        }
+        setEmbedStatus(await embeddingStatus());
+        showToast(`Indexed ${embedded} paper${embedded === 1 ? "" : "s"}${skipped ? ` (${skipped} unchanged)` : ""} ✨`);
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : "Indexing failed");
+      } finally {
+        setIndexing(false);
+      }
+    },
+    // Hybrid retrieval: fuse lexical + semantic (RRF). Falls back to lexical when
+    // there's no index/key. Used by "Ask your library".
+    hybridRetrieve: async (query: string, k = 16): Promise<Paper[]> => {
+      const byId = (id: string) => papers.find((p) => p.id === id);
+      const lex = retrieveForChat(papers, query, k).map((p) => p.id);
+      const sem = (await semanticSearch(query, k)).map((h) => h.id);
+      if (!sem.length) {
+        const ids = lex.length ? lex : filtered.slice(0, k).map((p) => p.id);
+        return ids.map(byId).filter((p): p is Paper => !!p);
+      }
+      const score = new Map<string, number>();
+      for (const list of [lex, sem])
+        list.forEach((id, i) => score.set(id, (score.get(id) ?? 0) + 1 / (60 + i)));
+      return [...score.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, k)
+        .map(([id]) => byId(id))
+        .filter((p): p is Paper => !!p);
+    },
+    getSimilar: async (id: string, k = 5): Promise<Paper[]> => {
+      const hits = await similarPapersCmd(id, k);
+      return hits.map((h) => papers.find((p) => p.id === h.id)).filter((p): p is Paper => !!p);
     },
     setTheme: (t: Theme) => {
       setThemeState(t);

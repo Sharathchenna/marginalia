@@ -449,6 +449,8 @@ function DetailPanel({ store: s }: { store: Store }) {
             </select>
           </div>
 
+          {s.embedStatus.embedded > 0 && <SimilarPapers store={s} id={cur.id} />}
+
           <div className="detail-section">
             <h3>Notes</h3>
             <textarea
@@ -461,5 +463,41 @@ function DetailPanel({ store: s }: { store: Store }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+// Embedding-based nearest neighbours for the selected paper (semantic search).
+function SimilarPapers({ store: s, id }: { store: Store; id: string }) {
+  const [items, setItems] = useState<Paper[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setItems([]);
+    setLoading(true);
+    s.getSimilar(id, 5)
+      .then((r) => alive && setItems(r))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  return (
+    <div className="detail-section">
+      <h3>Similar papers</h3>
+      {loading && <span className="desc" style={{ margin: 0 }}>Finding…</span>}
+      {!loading && items.length === 0 && (
+        <span className="desc" style={{ margin: 0 }}>None yet — build the index in Settings, or this paper isn’t indexed.</span>
+      )}
+      <div className="dash-list">
+        {items.map((p) => (
+          <button key={p.id} className="dash-item" onClick={() => s.select(p.id)}>
+            <span className="dash-item-title">{p.title}</span>
+            <span className="dash-item-meta">{p.authors} · {p.year || "—"}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

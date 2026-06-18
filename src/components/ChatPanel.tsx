@@ -3,7 +3,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Store } from "../store";
 import { askLibrary, chatAboutPaper, isAgentAvailable, type ChatTurn } from "../lib/agent";
-import { retrieveForChat } from "../lib/search";
 
 // Chat with Claude — about the selected/open paper, or across the whole library
 // in view. Conversation state is local to the panel. Renders either as a floating
@@ -65,10 +64,10 @@ export function ChatPanel({
     };
 
     if (library) {
-      // RAG-lite: retrieve the most relevant papers across the WHOLE library for
-      // this question, rather than stuffing the first 60 of the current filter.
-      const hits = retrieveForChat(s.papers, question, 16);
-      const pool = hits.length ? hits : s.filtered.slice(0, 16);
+      // Hybrid retrieval (lexical + semantic when indexed): pick the most relevant
+      // papers across the WHOLE library for this question, instead of stuffing the
+      // first 60 of the current filter.
+      const pool = await s.hybridRetrieve(question, 16);
       const ctx = pool.map((p) => ({
         title: p.title,
         authors: p.authors,

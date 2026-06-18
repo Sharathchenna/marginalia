@@ -3,6 +3,7 @@
 // the browser, so the React frontend is identical on both.
 mod agent;
 mod db;
+mod embeddings;
 mod metadata;
 
 use std::sync::Mutex;
@@ -29,7 +30,10 @@ fn default_settings() -> Value {
         "watchFolders": ["~/Downloads/Papers", "~/Dropbox/Zotero-inbox"],
         "librarySet": false,
         "glass": true,
-        "model": ""
+        "model": "",
+        "embedProvider": "off",
+        "embedModel": "voyage-3.5-lite",
+        "voyageKey": ""
     })
 }
 
@@ -121,6 +125,124 @@ fn save_settings(patch: Value, state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 fn lookup_identifier(identifier: String) -> Result<Value, String> {
     metadata::lookup(&identifier)
+}
+
+// ---------- semantic search (Voyage embeddings) ----------
+
+/// Read the embedding key + model from saved settings.
+fn embed_settings(conn: &Connection) -> (Option<String>, String) {
+    let s = db::get_kv(conn, "settings")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| json!({}));
+    let key = s
+        .get("voyageKey")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|k| !k.is_empty());
+    let model = s
+        .get("embedModel")
+        .and_then(Value::as_str)
+        .filter(|m| !m.is_empty())
+        .unwrap_or("voyage-3.5-lite")
+        .to_string();
+    (key, model)
+}
+
+#[tauri::command]
+fn embedding_status(state: State<AppState>) -> Result<Value, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (key, model) = embed_settings(&conn);
+    let count = db::embedding_count(&conn, &model).map_err(|e| e.to_string())?;
+    Ok(json!({ "embedded": count, "model": model, "hasKey": key.is_some() }))
+}
+
+/// Embed papers that changed (or were never embedded) and store their vectors.
+/// `items` is `[{ id, text }]`; unchanged papers (same model+hash) are skipped.
+#[tauri::command]
+fn embed_papers(items: Vec<Value>, state: State<AppState>) -> Result<Value, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (key, model) = embed_settings(&conn);
+    let key = key.ok_or("No Voyage API key set. Add it in Settings → Semantic search.")?;
+
+    let mut to_embed: Vec<(String, String, String)> = Vec::new(); // (id, text, hash)
+    let mut skipped = 0usize;
+    for it in &items {
+        let id = it.get("id").and_then(Value::as_str).unwrap_or("");
+        let text = it.get("text").and_then(Value::as_str).unwrap_or("");
+        if id.is_empty() || text.trim().is_empty() {
+            continue;
+        }
+        let hash = embeddings::text_hash(text);
+        match db::embedding_meta(&conn, id).map_err(|e| e.to_string())? {
+            Some((m, h)) if m == model && h == hash => skipped += 1,
+            _ => to_embed.push((id.to_string(), text.to_string(), hash)),
+        }
+    }
+
+    let mut embedded = 0usize;
+    for chunk in to_embed.chunks(100) {
+        let texts: Vec<String> = chunk.iter().map(|(_, t, _)| t.clone()).collect();
+        let vecs = embeddings::embed(&key, &model, &texts, "document")?;
+        for ((id, _t, hash), vec) in chunk.iter().zip(vecs.iter()) {
+            if vec.is_empty() {
+                continue;
+            }
+            db::upsert_embedding(&conn, id, &model, vec.len(), hash, &embeddings::f32_to_bytes(vec))
+                .map_err(|e| e.to_string())?;
+            embedded += 1;
+        }
+    }
+    Ok(json!({ "embedded": embedded, "skipped": skipped, "total": items.len() }))
+}
+
+/// Embed `query` and return the top-k papers by cosine similarity.
+#[tauri::command]
+fn semantic_search(query: String, k: usize, state: State<AppState>) -> Result<Vec<Value>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (key, model) = embed_settings(&conn);
+    let key = key.ok_or("No Voyage API key set.")?;
+    let qvec = embeddings::embed(&key, &model, &[query], "query")?
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    if qvec.is_empty() {
+        return Ok(vec![]);
+    }
+    let all = db::all_embeddings(&conn, &model).map_err(|e| e.to_string())?;
+    let mut scored: Vec<(String, f32)> = all
+        .into_iter()
+        .map(|(id, bytes)| (id, embeddings::cosine(&qvec, &embeddings::bytes_to_f32(&bytes))))
+        .collect();
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(scored
+        .into_iter()
+        .take(k)
+        .map(|(id, score)| json!({ "id": id, "score": score }))
+        .collect())
+}
+
+/// Nearest neighbours of one paper (uses stored vectors — no key/network needed).
+#[tauri::command]
+fn similar_papers(id: String, k: usize, state: State<AppState>) -> Result<Vec<Value>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (_key, model) = embed_settings(&conn);
+    let target = match db::get_embedding_vec(&conn, &id, &model).map_err(|e| e.to_string())? {
+        Some(b) => embeddings::bytes_to_f32(&b),
+        None => return Ok(vec![]),
+    };
+    let all = db::all_embeddings(&conn, &model).map_err(|e| e.to_string())?;
+    let mut scored: Vec<(String, f32)> = all
+        .into_iter()
+        .filter(|(pid, _)| pid != &id)
+        .map(|(pid, bytes)| (pid, embeddings::cosine(&target, &embeddings::bytes_to_f32(&bytes))))
+        .collect();
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(scored
+        .into_iter()
+        .take(k)
+        .map(|(pid, score)| json!({ "id": pid, "score": score }))
+        .collect())
 }
 
 // ---------- library folder + PDF files ----------
@@ -336,6 +458,10 @@ pub fn run() {
             download_pdf,
             import_pdf,
             scan_pdfs,
+            embedding_status,
+            embed_papers,
+            semantic_search,
+            similar_papers,
             agent::ai_chat
         ])
         .run(tauri::generate_context!())
