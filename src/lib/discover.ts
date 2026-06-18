@@ -6,13 +6,7 @@
 import type { Paper } from "../types";
 import { isTauri } from "./tauri";
 
-export type SourceId =
-  | "openalex"
-  | "semanticscholar"
-  | "arxiv"
-  | "crossref"
-  | "huggingface"
-  | "alphaxiv";
+export type SourceId = "openalex" | "semanticscholar" | "arxiv" | "crossref" | "huggingface";
 
 export const SOURCES: { id: SourceId; label: string }[] = [
   { id: "openalex", label: "OpenAlex" },
@@ -20,14 +14,7 @@ export const SOURCES: { id: SourceId; label: string }[] = [
   { id: "arxiv", label: "arXiv" },
   { id: "crossref", label: "Crossref" },
   { id: "huggingface", label: "Hugging Face" },
-  { id: "alphaxiv", label: "alphaXiv" },
 ];
-
-// Optional alphaXiv API key (bearer) for personalized feed; set from the store.
-let alphaxivKey = "";
-export function setAlphaxivKey(k: string): void {
-  alphaxivKey = k || "";
-}
 
 export interface DiscoverHit {
   id: string;
@@ -218,96 +205,12 @@ export async function trendingHuggingFace(): Promise<DiscoverHit[]> {
   return arr.map((it: any) => mapHfPaper(it.paper ?? it));
 }
 
-// ---------- alphaXiv (semantic recommender: similar-papers + trending feed) ----------
-function axivBase() {
-  return root("/alphaxiv", "https://api.alphaxiv.org");
-}
-async function axivJson(path: string): Promise<unknown> {
-  const headers: Record<string, string> = {};
-  if (alphaxivKey) headers.Authorization = `Bearer ${alphaxivKey}`;
-  const res = await fetch(`${axivBase()}${path}`, { headers });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-}
-const isArxivId = (s: string) => /^\d{4}\.\d{4,5}(v\d+)?$/.test(s || "");
-function mapAxivCard(c: any): DiscoverHit {
-  const names: string[] = Array.isArray(c.authors)
-    ? c.authors
-    : (c.full_authors ?? []).map((a: any) => a?.full_name).filter(Boolean);
-  const uid = String(c.universal_paper_id || c.canonical_id || c.id || "");
-  const topics: string[] = Array.isArray(c.topics) ? c.topics.filter((t: any) => typeof t === "string") : [];
-  const summary =
-    c.paper_summary && typeof c.paper_summary === "object"
-      ? c.paper_summary.summary
-      : typeof c.paper_summary === "string"
-        ? c.paper_summary
-        : undefined;
-  const pub = c.publication_date || c.first_publication_date || "";
-  return {
-    id: uid,
-    source: "alphaxiv",
-    title: (c.title || "Untitled").replace(/\s+/g, " "),
-    authorsShort: shortAuthors(names.map(lastName)),
-    authorsFull: names.join(", "),
-    year: pub ? Number(String(pub).slice(0, 4)) : 0,
-    venue: "alphaXiv",
-    doi: "—",
-    arxiv: isArxivId(uid) ? uid.replace(/v\d+$/, "") : "—",
-    abstract: (c.abstract || "").replace(/\s+/g, " "),
-    tldr: summary || undefined,
-    keywords: topics.length ? topics : undefined,
-    citedBy: Number(c?.metrics?.public_total_votes ?? c?.metrics?.visits_count?.all ?? 0) || 0,
-  };
-}
-async function searchAlphaxiv(query: string): Promise<DiscoverHit[]> {
-  const data = await axivJson(`/v1/search/paper?q=${encodeURIComponent(query)}`);
-  const arr = Array.isArray(data) ? data : [];
-  return arr.slice(0, 20).map(mapAxivCard);
-}
-export async function trendingAlphaxiv(): Promise<DiscoverHit[]> {
-  const data: any = await axivJson(
-    `/papers/v3/feed?pageNum=0&pageSize=30&sort=Hot&interval=${encodeURIComponent("7 Days")}`,
-  );
-  const arr = data && Array.isArray(data.papers) ? data.papers : [];
-  return arr.map(mapAxivCard);
-}
-// Content-based recommender: papers similar to a given arXiv id. Public, no auth.
-export async function similarPapers(arxivId: string): Promise<DiscoverHit[]> {
-  const data = await axivJson(`/papers/v3/${encodeURIComponent(arxivId)}/similar-papers`);
-  const arr = Array.isArray(data) ? data : [];
-  return arr.map(mapAxivCard);
-}
-
-// Library-level recommender: pool similar-papers across several seed papers and
-// rank by how often each recommendation recurs (then popularity). Pure ranking;
-// the caller filters out papers already owned.
-export async function recommendForLibrary(seedArxivIds: string[]): Promise<DiscoverHit[]> {
-  const seeds = new Set(seedArxivIds.map((s) => s.replace(/v\d+$/, "")));
-  const lists = await Promise.all(
-    seedArxivIds.slice(0, 8).map((id) => similarPapers(id).catch(() => [] as DiscoverHit[])),
-  );
-  const freq = new Map<string, { hit: DiscoverHit; n: number }>();
-  for (const list of lists)
-    for (const h of list) {
-      const norm = h.arxiv !== "—" ? h.arxiv.replace(/v\d+$/, "") : "";
-      if (norm && seeds.has(norm)) continue; // skip the seeds themselves
-      const key = norm ? "a:" + norm : "i:" + h.id;
-      const cur = freq.get(key);
-      if (cur) cur.n++;
-      else freq.set(key, { hit: h, n: 1 });
-    }
-  return [...freq.values()]
-    .sort((a, b) => b.n - a.n || b.hit.citedBy - a.hit.citedBy)
-    .map((x) => x.hit);
-}
-
 const ADAPTERS: Record<SourceId, (q: string) => Promise<DiscoverHit[]>> = {
   openalex: searchOpenAlex,
   semanticscholar: searchSemanticScholar,
   arxiv: searchArxiv,
   crossref: searchCrossref,
   huggingface: searchHuggingFace,
-  alphaxiv: searchAlphaxiv,
 };
 
 function dedupeKey(h: DiscoverHit): string {

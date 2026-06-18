@@ -37,6 +37,10 @@ export interface Paper {
   status?: ReadingStatus;
   /** Manual paper-to-paper links (related work), by paper id. */
   related?: string[];
+  /** AI-extracted key concepts/methods/named entities — used to connect papers. */
+  concepts?: string[];
+  /** Cached extracted body text (native only) for full-text search & AI context. */
+  fulltext?: string;
   /** Last page viewed in the reader, for resume. */
   lastPage?: number;
   /** Per-highlight flashcards review state, keyed by highlight index. */

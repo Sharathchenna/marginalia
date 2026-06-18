@@ -46,24 +46,31 @@ export function GraphView({ store: s }: { store: Store }) {
       return { id: p.id, x, y, title: p.title, color: colorOf(p), fav: p.fav };
     });
 
-    // Weighted tag co-occurrence: how many tags each pair of papers shares.
+    // Weighted co-occurrence: papers that share concepts (specific methods/ideas)
+    // or tags (broad topics) get linked. Shared concepts count for more since
+    // they're a stronger signal of genuine relatedness.
     const weight = new Map<string, number>();
-    const tagMap = new Map<string, string[]>();
-    for (const p of papers) {
-      for (const t of p.tags) {
-        const arr = tagMap.get(t);
-        if (arr) arr.push(p.id);
-        else tagMap.set(t, [p.id]);
-      }
-    }
-    for (const ids of tagMap.values()) {
-      if (ids.length < 2 || ids.length > MAX_TAG_GROUP) continue;
-      for (let i = 0; i < ids.length; i++)
-        for (let j = i + 1; j < ids.length; j++) {
-          const key = ids[i] < ids[j] ? `${ids[i]}|${ids[j]}` : `${ids[j]}|${ids[i]}`;
-          weight.set(key, (weight.get(key) ?? 0) + 1);
+    const accumulate = (getKeys: (p: Paper) => string[], perPair: number) => {
+      const map = new Map<string, string[]>();
+      for (const p of papers)
+        for (const k of getKeys(p)) {
+          const norm = k.toLowerCase().trim();
+          if (!norm) continue;
+          const arr = map.get(norm);
+          if (arr) arr.push(p.id);
+          else map.set(norm, [p.id]);
         }
-    }
+      for (const ids of map.values()) {
+        if (ids.length < 2 || ids.length > MAX_TAG_GROUP) continue;
+        for (let i = 0; i < ids.length; i++)
+          for (let j = i + 1; j < ids.length; j++) {
+            const key = ids[i] < ids[j] ? `${ids[i]}|${ids[j]}` : `${ids[j]}|${ids[i]}`;
+            weight.set(key, (weight.get(key) ?? 0) + perPair);
+          }
+      }
+    };
+    accumulate((p) => p.concepts ?? [], 2);
+    accumulate((p) => p.tags, 1);
     // Keep only each node's strongest few tag links (avoids a hairball).
     const neigh = new Map<string, { other: string; w: number }[]>();
     for (const [key, w] of weight) {

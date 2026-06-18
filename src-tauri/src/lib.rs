@@ -29,8 +29,7 @@ fn default_settings() -> Value {
         "watchFolders": ["~/Downloads/Papers", "~/Dropbox/Zotero-inbox"],
         "librarySet": false,
         "glass": true,
-        "model": "",
-        "alphaxivKey": ""
+        "model": ""
     })
 }
 

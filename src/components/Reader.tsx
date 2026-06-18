@@ -8,6 +8,7 @@ import type { Store } from "../store";
 import type { Highlight } from "../types";
 import {
   destToPage,
+  extractFullText,
   getOutline,
   loadPdfSource,
   paintHighlights,
@@ -17,6 +18,7 @@ import {
   type OutlineNode,
 } from "../lib/pdf";
 import { resolvePdf } from "../lib/library";
+import { isTauri } from "../lib/tauri";
 import { ChatPanel } from "./ChatPanel";
 import { AnnPanelIcon, ChevronLeftIcon, SearchIcon, StickyIcon } from "../icons";
 
@@ -158,6 +160,15 @@ export function Reader({ store: s }: { store: Store }) {
         setLoading(false);
         const o = await getOutline(doc);
         if (alive) setOutline(o);
+        // Cache body text once (native) for full-text search + richer AI context.
+        if (alive && isTauri() && !rp.fulltext) {
+          try {
+            const text = await extractFullText(doc);
+            if (alive && text) s.patchPaper(rp.id, { fulltext: text });
+          } catch {
+            /* extraction is best-effort */
+          }
+        }
       })
       .catch(() => {
         if (!alive) return;

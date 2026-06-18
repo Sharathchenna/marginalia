@@ -32,6 +32,7 @@ export interface ChatTurn {
 export interface AutoTagResult {
   tags?: string[];
   category?: string;
+  concepts?: string[];
   authorsShort?: string;
   authorsFull?: string;
   year?: number | string;

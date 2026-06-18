@@ -3,7 +3,7 @@
 import { build } from "esbuild";
 
 const entry = `
-export { searchPapers } from './lib/search';
+export { searchPapers, retrieveForChat } from './lib/search';
 export { toBibTeX, parseBibliography, exportLibrary, citationText } from './lib/citation';
 export { classifyIdentifier } from './lib/metadata';
 export { rrfMerge, hitToPaper } from './lib/discover';
@@ -42,6 +42,12 @@ const s2 = m.searchPapers(m.PAPERS, "reinforcement");
 ok("search 'reinforcement' matches RL papers", s2.length >= 1 && s2.every((h) => h.score > 0));
 ok("search AND semantics: 'attention quantum' → none", m.searchPapers(m.PAPERS, "attention quantum").length === 0);
 ok("empty query returns all", m.searchPapers(m.PAPERS, "").length === m.PAPERS.length);
+
+// --- RAG-lite retrieval (alphaxiv-inspired) ---
+const r1 = m.retrieveForChat(m.PAPERS, "which papers are about attention mechanisms?", 5);
+ok("retrieveForChat finds attention paper", r1.some((p) => p.id === "attention"));
+ok("retrieveForChat drops stopword-only query", m.retrieveForChat(m.PAPERS, "what are the the of and", 5).length === 0);
+ok("retrieveForChat respects k", m.retrieveForChat(m.PAPERS, "learning model network", 3).length <= 3);
 
 // --- citations (Phase 5) ---
 const bib = m.toBibTeX(m.PAPERS[0]);

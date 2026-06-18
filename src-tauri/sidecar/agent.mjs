@@ -285,11 +285,14 @@ async function runTag(payload, model) {
     'short noun phrases (e.g. "Reinforcement Learning", "Transformers", "Optimization").',
     "Also identify the authors, year, and venue. authorsShort is the citation form",
     '("Vaswani et al."); authorsFull is the comma-separated full list.',
+    'Also list "concepts": 3-8 SPECIFIC named methods, models, datasets, or technical',
+    'ideas the paper centres on (e.g. "Self-Attention", "ImageNet", "PPO", "RLHF").',
+    "Concepts are precise and shareable across papers — distinct from the broad tags.",
     pdfPath
       ? `Read the PDF at ${pdfPath} to find the authors/venue/year and confirm the topic.`
       : "Use only the metadata below; if a field is unknown, use \"—\" (or [] for tags).",
     'Respond with ONLY a minified JSON object: {"tags": [3-6 strings], "category": "one broad area",',
-    '"authorsShort": string, "authorsFull": string, "year": number, "venue": string}.',
+    '"concepts": [3-8 strings], "authorsShort": string, "authorsFull": string, "year": number, "venue": string}.',
     "",
     "=== PAPER ===",
     meta || "(only a title is available)",

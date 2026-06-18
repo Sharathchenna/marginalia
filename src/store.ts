@@ -21,7 +21,6 @@ import {
 } from "./lib/library";
 import type { ScannedPdf } from "./lib/library";
 import { lookupIdentifier } from "./lib/metadata";
-import { setAlphaxivKey } from "./lib/discover";
 import { autoTag as agentAutoTag, extractMetadata, summarizePaper, setAgentModel } from "./lib/agent";
 import type { AutoTagResult } from "./lib/agent";
 import { exportLibrary as exportLibraryMd, exportPaper as exportPaperMd } from "./lib/markdown";
@@ -123,8 +122,6 @@ export function useStore() {
   const [glass, setGlassState] = useState(GLASS_PLATFORM !== "off");
   // Model for all AI actions ("" = SDK/account default).
   const [model, setModelState] = useState("");
-  // Optional alphaXiv API key for the personalized feed ("" = public only).
-  const [alphaxivKey, setAlphaxivKeyState] = useState("");
 
   // ----- transient UI state -----
   const [filter, setFilter] = useState<Filter>("all");
@@ -178,10 +175,6 @@ export function useStore() {
       if (typeof st.model === "string") {
         setModelState(st.model);
         setAgentModel(st.model);
-      }
-      if (typeof st.alphaxivKey === "string") {
-        setAlphaxivKeyState(st.alphaxivKey);
-        setAlphaxivKey(st.alphaxivKey);
       }
       if (ps.length && !ps.some((p) => p.id === "attention")) {
         setSelectedId(ps[0].id);
@@ -448,13 +441,6 @@ export function useStore() {
       setAgentModel(m);
       persistSettings({ model: m });
     },
-    alphaxivKey,
-    setAlphaxivKey: (k: string) => {
-      const key = k.trim();
-      setAlphaxivKeyState(key);
-      setAlphaxivKey(key);
-      persistSettings({ alphaxivKey: key });
-    },
     setTheme: (t: Theme) => {
       setThemeState(t);
       persistSettings({ theme: t });
@@ -672,7 +658,7 @@ export function useStore() {
         version: 1,
         papers,
         collections,
-        settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model, alphaxivKey },
+        settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
       };
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
@@ -705,10 +691,6 @@ export function useStore() {
           if (typeof st.model === "string") {
             setModelState(st.model);
             setAgentModel(st.model);
-          }
-          if (typeof st.alphaxivKey === "string") {
-            setAlphaxivKeyState(st.alphaxivKey);
-            setAlphaxivKey(st.alphaxivKey);
           }
           void r.saveSettings(st);
         }
@@ -895,6 +877,8 @@ export function useStore() {
         const m = await agentAutoTag(p, vocab, pdf);
         const add = [...(m.tags ?? []), ...(m.category ? [m.category] : [])];
         const patch: Partial<Paper> = { tags: [...new Set([...(p.tags || []), ...add])] };
+        if (Array.isArray(m.concepts) && m.concepts.length)
+          patch.concepts = [...new Set(m.concepts.map(String))];
         enrich(patch, p, m);
         patchPaper(id, patch);
         // Auto-file into a collection named after the AI category.
@@ -926,6 +910,8 @@ export function useStore() {
           const m = await agentAutoTag(p, vocab, pdf);
           const add = [...(m.tags ?? []), ...(m.category ? [m.category] : [])];
           const patch: Partial<Paper> = { tags: [...new Set(add)] };
+          if (Array.isArray(m.concepts) && m.concepts.length)
+            patch.concepts = [...new Set(m.concepts.map(String))];
           enrich(patch, p, m);
           patchPaper(p.id, patch);
           // Auto-file into a collection named after the AI category (one persist

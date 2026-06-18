@@ -144,6 +144,27 @@ export async function destToPage(pdf: PDFDocumentProxy, dest: any): Promise<numb
 }
 
 // Find the first page (>= fromPage, wrapping) whose text contains `term`.
+// Extract the full body text of a PDF (capped) for full-text search + AI context.
+// Reuses pdf.js's per-page text content; pages are joined with blank lines.
+export async function extractFullText(pdf: PDFDocumentProxy, maxChars = 60000): Promise<string> {
+  const out: string[] = [];
+  let len = 0;
+  for (let pageNum = 1; pageNum <= pdf.numPages && len < maxChars; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+    const text = content.items
+      .map((it) => ("str" in it ? (it as { str: string }).str : ""))
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) {
+      out.push(text);
+      len += text.length;
+    }
+  }
+  return out.join("\n\n").slice(0, maxChars);
+}
+
 export async function searchInPdf(
   pdf: PDFDocumentProxy,
   term: string,

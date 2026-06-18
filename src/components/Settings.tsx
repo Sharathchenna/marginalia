@@ -115,26 +115,6 @@ export function Settings({ store: s }: { store: Store }) {
           </div>
 
           <div>
-            <h3>alphaXiv recommendations</h3>
-            <p className="desc">
-              Recommendations (similar papers, trending) work without an account. Add an
-              alphaXiv API key only if you want your personalized feed.
-            </p>
-            <div className="field-row">
-              <input
-                className="id-input"
-                type="password"
-                style={{ flex: 1 }}
-                placeholder="alphaXiv API key (optional)"
-                defaultValue={s.alphaxivKey}
-                onBlur={(e) => {
-                  if (e.target.value.trim() !== s.alphaxivKey) s.setAlphaxivKey(e.target.value);
-                }}
-              />
-            </div>
-          </div>
-
-          <div>
             <h3>Default citation style</h3>
             <p className="desc">Used when copying references and building bibliographies.</p>
             <div className="seg-group">

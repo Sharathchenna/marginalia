@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import type { Store } from "../store";
 import type { ReadingStatus } from "../types";
-import { LibraryRecommendations } from "./Recommendations";
 
 function effStatus(read: boolean, status?: ReadingStatus): ReadingStatus {
   return status ?? (read ? "done" : "unread");
@@ -105,8 +104,6 @@ export function Dashboard({ store: s }: { store: Store }) {
             </div>
           </section>
         )}
-
-        {stats.total > 0 && <LibraryRecommendations store={s} />}
 
         <div style={{ display: "flex", gap: 9, marginTop: 28, flexWrap: "wrap" }}>
           <button className="btn-primary" onClick={s.importFiles}>Import PDFs</button>

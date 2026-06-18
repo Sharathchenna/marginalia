@@ -5,7 +5,6 @@ import {
   hitToPaper,
   SOURCES,
   trendingHuggingFace,
-  trendingAlphaxiv,
   type DiscoverHit,
   type SourceId,
 } from "../lib/discover";
@@ -16,7 +15,6 @@ const SOURCE_LABEL: Record<SourceId, string> = {
   arxiv: "arXiv",
   crossref: "Crossref",
   huggingface: "HF",
-  alphaxiv: "αX",
 };
 
 // Find new papers across multiple scholarly sources and add them to the library.
@@ -46,12 +44,12 @@ export function Discover({ store: s }: { store: Store }) {
     }
   };
 
-  const trending = async (loader: () => Promise<DiscoverHit[]>) => {
+  const trending = async () => {
     setBusy(true);
     setError("");
     setRan(true);
     try {
-      setResults(await loader());
+      setResults(await trendingHuggingFace());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load trending");
       setResults([]);
@@ -95,11 +93,8 @@ export function Discover({ store: s }: { store: Store }) {
         </div>
 
         <div className="discover-trending">
-          <button className="link-btn" onClick={() => trending(trendingHuggingFace)} disabled={busy}>
+          <button className="link-btn" onClick={trending} disabled={busy}>
             🔥 Trending on Hugging Face
-          </button>
-          <button className="link-btn" onClick={() => trending(trendingAlphaxiv)} disabled={busy}>
-            🔥 Trending on alphaXiv
           </button>
         </div>
 

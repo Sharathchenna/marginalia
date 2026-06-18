@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Store } from "../store";
 import type { Paper, ReadingStatus } from "../types";
-import { PaperRecommendations } from "./Recommendations";
 import { MoreIcon, SortIcon, StarIcon } from "../icons";
 
 function readDotStyle(p: Paper) {
@@ -373,6 +372,27 @@ function DetailPanel({ store: s }: { store: Store }) {
             </div>
           </div>
 
+          {cur.concepts && cur.concepts.length > 0 && (
+            <div className="detail-section">
+              <h3>Concepts</h3>
+              <div className="detail-tags">
+                {cur.concepts.map((cp) => (
+                  <span
+                    key={cp}
+                    className="detail-tag concept"
+                    title="Search papers with this concept"
+                    onClick={() => {
+                      s.openPalette();
+                      s.setQ(cp);
+                    }}
+                  >
+                    {cp}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="detail-section">
             <h3>Collections</h3>
             <div className="coll-checklist">
@@ -428,8 +448,6 @@ function DetailPanel({ store: s }: { store: Store }) {
                 ))}
             </select>
           </div>
-
-          <PaperRecommendations store={s} paper={cur} />
 
           <div className="detail-section">
             <h3>Notes</h3>
