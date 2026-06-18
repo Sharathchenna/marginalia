@@ -1132,7 +1132,15 @@ textarea.editable-input {
 }
 .graph-edge {
   stroke: var(--border-2);
-  stroke-width: 1.5;
+  stroke-width: 1.2;
+  transition: opacity 0.12s;
+}
+.graph-edge.rel {
+  stroke: var(--accent-line);
+  stroke-width: 2;
+}
+.graph-edge[data-dim="true"] {
+  opacity: 0.12;
 }
 .graph-node {
   cursor: pointer;
@@ -1143,7 +1151,7 @@ textarea.editable-input {
   stroke-width: 2;
 }
 .graph-node:hover circle {
-  r: 10;
+  r: 11;
 }
 .graph-label {
   fill: var(--text-2);
