@@ -37,6 +37,9 @@ pub fn start(app: AppHandle) {
         CAPTURE_PORT.store(bound, Ordering::Relaxed);
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
+            // Don't let a slow/hung client freeze this single-threaded loop.
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(3)));
             let mut buf = [0u8; 16384];
             let n = stream.read(&mut buf).unwrap_or(0);
             let req = String::from_utf8_lossy(&buf[..n]);
@@ -66,9 +69,10 @@ fn parse_param(req: &str) -> Option<String> {
     let path = line.split_whitespace().nth(1)?; // "/add?u=..."
     let query = path.split_once('?')?.1;
     for pair in query.split('&') {
-        let (k, v) = pair.split_once('=')?;
-        if k == "u" || k == "url" {
-            return Some(percent_decode(v));
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == "u" || k == "url" {
+                return Some(percent_decode(v));
+            }
         }
     }
     None

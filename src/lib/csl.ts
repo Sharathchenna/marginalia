@@ -112,7 +112,7 @@ function getEngine(cslId: string): Engine | null {
   if (!xml) return null;
   const sys = {
     retrieveLocale: () => localeEnUS,
-    retrieveItem: (id: string) => (currentItem && currentItem.id === id ? currentItem : currentItem),
+    retrieveItem: (id: string) => (currentItem && currentItem.id === id ? currentItem : null),
   };
   try {
     const engine = new CSL.Engine(sys, xml);

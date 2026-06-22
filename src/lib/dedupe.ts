@@ -93,6 +93,22 @@ export function mergePapers(group: Paper[]): { merged: Paper; dropIds: string[] 
     return keep[k];
   };
 
+  // Highlights are concatenated in `sorted` order; flashcard SRS state (`cards`)
+  // is keyed by highlight index, so re-key each paper's cards by the cumulative
+  // highlight offset — otherwise every paper's review history but the keeper's is
+  // lost on merge.
+  type Card = NonNullable<Paper["cards"]>[number];
+  const mergedCards: Record<number, Card> = {};
+  let hlOffset = 0;
+  for (const p of sorted) {
+    if (p.cards) {
+      for (const [idx, card] of Object.entries(p.cards)) {
+        mergedCards[Number(idx) + hlOffset] = card;
+      }
+    }
+    hlOffset += p.hl?.length || 0;
+  }
+
   const merged: Paper = {
     ...keep,
     abstract: pick("abstract", "") as string,
@@ -110,7 +126,8 @@ export function mergePapers(group: Paper[]): { merged: Paper; dropIds: string[] 
     tags: dedupeStrings(group.flatMap((p) => p.tags || [])),
     concepts: dedupeStrings(group.flatMap((p) => p.concepts || [])),
     related: dedupeStrings(group.flatMap((p) => p.related || [])).filter((id) => id !== keep.id),
-    hl: group.flatMap((p) => p.hl || []),
+    hl: sorted.flatMap((p) => p.hl || []),
+    cards: Object.keys(mergedCards).length ? mergedCards : undefined,
     retracted: group.map((p) => p.retracted).find(Boolean) ?? keep.retracted,
   };
 

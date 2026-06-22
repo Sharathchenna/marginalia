@@ -137,24 +137,17 @@ pub fn upsert_paper(conn: &Connection, p: &Value) -> rusqlite::Result<()> {
 
 pub fn replace_papers(conn: &Connection, papers: &[Value]) -> rusqlite::Result<()> {
     // Atomic wipe+refill: a crash mid-way must not leave an empty/partial library.
-    conn.execute_batch("BEGIN IMMEDIATE")?;
-    let result = (|| -> rusqlite::Result<()> {
-        conn.execute("DELETE FROM papers", [])?;
-        conn.execute("DELETE FROM papers_fts", [])?;
-        for p in papers {
-            upsert_paper(conn, p)?;
-        }
-        // drop vectors for papers that no longer exist (avoid polluting search)
-        conn.execute("DELETE FROM embeddings WHERE paper_id NOT IN (SELECT id FROM papers)", [])?;
-        Ok(())
-    })();
-    match result {
-        Ok(()) => conn.execute_batch("COMMIT"),
-        Err(e) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            Err(e)
-        }
+    // RAII transaction — rolls back automatically if dropped before commit (e.g. on
+    // an early `?` return or a panic), so the connection can never be left locked.
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM papers", [])?;
+    tx.execute("DELETE FROM papers_fts", [])?;
+    for p in papers {
+        upsert_paper(&tx, p)?;
     }
+    // drop vectors for papers that no longer exist (avoid polluting search)
+    tx.execute("DELETE FROM embeddings WHERE paper_id NOT IN (SELECT id FROM papers)", [])?;
+    tx.commit()
 }
 
 pub fn list_papers(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
