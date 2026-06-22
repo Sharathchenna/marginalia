@@ -81,7 +81,7 @@ function matchYear(year: number, v: string): boolean {
   if ((m = v.match(/^>=?\s*(\d{4})$/))) return year >= +m[1];
   if ((m = v.match(/^<=?\s*(\d{4})$/))) return year <= +m[1];
   if ((m = v.match(/^(\d{4})$/))) return year === +m[1];
-  return true;
+  return false; // unrecognized year filter shouldn't silently match every paper
 }
 
 function matchField(p: Paper, t: FieldTerm): boolean {

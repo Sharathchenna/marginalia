@@ -36,6 +36,9 @@ export function ChatPanel({
   const [model, setModel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  // set synchronously on Stop, so a Stop pressed *during* the async setup (before
+  // cancelRef is assigned) still aborts the turn the moment it becomes cancellable
+  const cancelledRef = useRef(false);
   // whether the view is pinned to the bottom (don't yank the user back up if
   // they've scrolled away to re-read while the answer streams)
   const stick = useRef(true);
@@ -63,6 +66,7 @@ export function ChatPanel({
     });
 
   const stop = () => {
+    cancelledRef.current = true;
     cancelRef.current?.();
     cancelRef.current = null;
     setBusy(false);
@@ -78,6 +82,7 @@ export function ChatPanel({
   const send = async () => {
     const question = input.trim();
     if (!question || busy || !ready) return;
+    cancelledRef.current = false; // fresh turn
     setError("");
     setInput("");
     stick.current = true; // a fresh question scrolls to show the answer
@@ -145,6 +150,11 @@ export function ChatPanel({
         pdfPath,
         s.chatSelection || undefined,
       );
+    }
+    // Stop pressed while we were awaiting setup? Abort now that we can.
+    if (cancelledRef.current) {
+      cancelRef.current?.();
+      cancelRef.current = null;
     }
   };
 

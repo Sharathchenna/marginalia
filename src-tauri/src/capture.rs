@@ -25,6 +25,9 @@ const OK_HTML: &str = "<!doctype html><meta charset=utf-8><title>Marginalia</tit
 const ERR_HTML: &str = "<!doctype html><meta charset=utf-8><title>Marginalia</title>\
 <body style=\"font:15px -apple-system,system-ui,sans-serif;display:grid;place-items:center;height:90vh\">\
 <p>No URL received.</p>";
+const FORBIDDEN_HTML: &str = "<!doctype html><meta charset=utf-8><title>Marginalia</title>\
+<body style=\"font:15px -apple-system,system-ui,sans-serif;display:grid;place-items:center;height:90vh\">\
+<p>Blocked: this request didn't come from the bookmarklet or the Marginalia extension.</p>";
 
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
@@ -44,16 +47,29 @@ pub fn start(app: AppHandle) {
             let n = stream.read(&mut buf).unwrap_or(0);
             let req = String::from_utf8_lossy(&buf[..n]);
             let url = parse_param(&req);
-            let body = match &url {
-                Some(u) if !u.is_empty() => {
+            // CSRF guard: a side-effecting capture must originate from a top-level
+            // navigation (the bookmarklet's window.open → Sec-Fetch-Dest: document)
+            // or carry the extension's X-Marginalia header (which a malicious page
+            // can't send cross-origin without a preflight we never approve). A
+            // drive-by `fetch()` from any site is Sec-Fetch-Dest: empty → rejected.
+            // No Sec-Fetch-* header at all = a non-browser client (curl) → allowed.
+            let authorized = header(&req, "x-marginalia").is_some()
+                || header(&req, "sec-fetch-dest") == Some("document")
+                || header(&req, "sec-fetch-mode").is_none();
+            let (status, body) = match &url {
+                Some(u) if !u.is_empty() && authorized => {
                     let _ = app.emit("capture-url", u.clone());
-                    OK_HTML
+                    ("200 OK", OK_HTML)
                 }
-                _ => ERR_HTML,
+                Some(_) if !authorized => ("403 Forbidden", FORBIDDEN_HTML),
+                _ => ("200 OK", ERR_HTML),
             };
+            // No Access-Control-Allow-Origin: the bookmarklet navigates (no CORS
+            // needed) and the extension reads via host permission (CORS-exempt), so
+            // we don't hand a wildcard to arbitrary pages.
             let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\
-                 Access-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
+                "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\n\
+                 Connection: close\r\nContent-Length: {}\r\n\r\n{}",
                 body.len(),
                 body
             );
@@ -61,6 +77,23 @@ pub fn start(app: AppHandle) {
             let _ = stream.flush();
         }
     });
+}
+
+// Case-insensitive lookup of a request header value (stops at the blank line
+// separating headers from the body).
+fn header<'a>(req: &'a str, name: &str) -> Option<&'a str> {
+    let want = name.to_ascii_lowercase();
+    for line in req.lines().skip(1) {
+        if line.is_empty() {
+            break;
+        }
+        if let Some((k, v)) = line.split_once(':') {
+            if k.trim().eq_ignore_ascii_case(&want) {
+                return Some(v.trim());
+            }
+        }
+    }
+    None
 }
 
 // Pull the `u` (or `url`) query param out of the HTTP request line and decode it.

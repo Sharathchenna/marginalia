@@ -105,16 +105,16 @@ pub fn ai_chat(
     }
 
     // drain stderr into a bounded ring buffer (last 20 lines) for error reporting
-    let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::<String>::new()));
     if let Some(stderr) = child.stderr.take() {
         let buf = stderr_buf.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                 if let Ok(mut v) = buf.lock() {
-                    v.push(line);
-                    let len = v.len();
-                    if len > 20 {
-                        v.drain(0..len - 20);
+                    // O(1) bounded ring buffer (last 20 lines).
+                    v.push_back(line);
+                    if v.len() > 20 {
+                        v.pop_front();
                     }
                 }
             }
@@ -143,7 +143,11 @@ pub fn ai_chat(
         if let Ok(mut map) = app2.state::<AppState>().children.lock() {
             map.remove(&rid);
         }
-        let tail = err_buf.lock().ok().map(|v| v.join("\n")).unwrap_or_default();
+        let tail = err_buf
+            .lock()
+            .ok()
+            .map(|v| v.iter().cloned().collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default();
         let tail = tail.trim();
         let mut closed = json!({ "__marg": true, "requestId": rid, "type": "closed" });
         if !tail.is_empty() {

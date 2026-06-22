@@ -54,8 +54,8 @@ fn list_papers(state: State<AppState>) -> Result<Vec<Value>, String> {
 
 #[tauri::command]
 fn replace_papers(papers: Vec<Value>, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    db::replace_papers(&conn, &papers).map_err(|e| e.to_string())
+    let mut conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+    db::replace_papers(&mut conn, &papers).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -380,7 +380,10 @@ fn safe_filename(name: &str) -> String {
 
 // A destination that doesn't clobber an existing file: name.pdf, name-1.pdf, …
 fn unique_dest(dir: &str, filename: &str) -> (std::path::PathBuf, String) {
-    let dest = join(dir, filename);
+    // Expand the directory once — `join` shell-expands every call, so doing it in
+    // the collision loop would repeat the HOME lookup on each iteration.
+    let expanded_dir = std::path::PathBuf::from(shellexpand(dir));
+    let dest = expanded_dir.join(filename);
     if !dest.exists() {
         return (dest, filename.to_string());
     }
@@ -390,7 +393,7 @@ fn unique_dest(dir: &str, filename: &str) -> (std::path::PathBuf, String) {
     let mut i = 1;
     loop {
         let cand = format!("{stem}-{i}.{ext}");
-        let dest = join(dir, &cand);
+        let dest = expanded_dir.join(&cand);
         if !dest.exists() {
             return (dest, cand);
         }

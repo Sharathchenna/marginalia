@@ -5,9 +5,14 @@ const api = typeof browser !== "undefined" ? browser : chrome;
 const MARG_PORTS = [8787, 8788, 8789, 8790];
 let _port = null;
 
+// The X-Marginalia header authorizes the request to the desktop listener. A web
+// page can't replicate it cross-origin (it would trigger a preflight the server
+// never approves), so it gates out drive-by capture attempts.
+const MARG_HEADERS = { "X-Marginalia": "1" };
+
 async function margPing(port) {
   try {
-    const r = await fetch(`http://127.0.0.1:${port}/marg-ping`, { method: "GET" });
+    const r = await fetch(`http://127.0.0.1:${port}/marg-ping`, { headers: MARG_HEADERS });
     return r.ok;
   } catch {
     return false;
@@ -31,7 +36,9 @@ async function margFindPort() {
 async function margSend(url) {
   const port = await margFindPort();
   if (!port) throw new Error("Marginalia isn't running. Open the desktop app and try again.");
-  const r = await fetch(`http://127.0.0.1:${port}/add?u=${encodeURIComponent(url)}`);
+  const r = await fetch(`http://127.0.0.1:${port}/add?u=${encodeURIComponent(url)}`, {
+    headers: MARG_HEADERS,
+  });
   if (!r.ok) throw new Error(`Capture failed (${r.status})`);
   return true;
 }

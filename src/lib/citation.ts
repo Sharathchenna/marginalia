@@ -119,6 +119,18 @@ export function toRIS(p: Paper): string {
   return lines.join("\n");
 }
 
+// Spreadsheet-style base-26 suffix: 1→a, 26→z, 27→aa, 28→ab … so a 27th+
+// collision can't emit non-alphabetic chars ({ | } ~) that break BibTeX keys.
+function alphaSuffix(n: number): string {
+  let s = "";
+  while (n > 0) {
+    n--;
+    s = String.fromCharCode(97 + (n % 26)) + s;
+    n = Math.floor(n / 26);
+  }
+  return s;
+}
+
 export function exportLibrary(papers: Paper[], format: "bibtex" | "ris"): string {
   if (format === "ris") return papers.map(toRIS).join("\n\n") + "\n";
   // De-duplicate colliding cite keys (smith2020 → smith2020a / smith2020b …).
@@ -129,7 +141,7 @@ export function exportLibrary(papers: Paper[], format: "bibtex" | "ris"): string
         const base = citeKey(p);
         const n = seen.get(base) ?? 0;
         seen.set(base, n + 1);
-        const key = n === 0 ? base : base + String.fromCharCode(96 + n);
+        const key = n === 0 ? base : base + alphaSuffix(n);
         return toBibTeX(p, key);
       })
       .join("\n\n") + "\n"
