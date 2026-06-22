@@ -45,32 +45,44 @@ $("scan").addEventListener("click", async () => {
   renderList();
 });
 
+// Build the list with DOM nodes (no innerHTML) so untrusted page text can never
+// be interpreted as markup.
 function renderList() {
   const list = $("list");
-  list.innerHTML = "";
+  list.replaceChildren();
   $("results").style.display = "block";
   if (!entries.length) {
     $("resHint").textContent = "No arXiv / DOI / PDF links found here.";
-    list.innerHTML = '<div class="count">Nothing to capture.</div>';
+    const empty = document.createElement("div");
+    empty.className = "count";
+    empty.textContent = "Nothing to capture.";
+    list.appendChild(empty);
     return;
   }
   $("resHint").textContent = `Found ${entries.length} link${entries.length === 1 ? "" : "s"} — pick what to capture:`;
   entries.forEach((e, i) => {
     const row = document.createElement("label");
     row.className = "item";
-    row.innerHTML =
-      `<input type="checkbox" data-i="${i}" checked />` +
-      `<span class="meta"><span class="typ">${e.type}</span><br><span class="lbl">${escapeHtml(e.label)}</span></span>`;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = true;
+    cb.dataset.i = String(i);
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    const typ = document.createElement("span");
+    typ.className = "typ";
+    typ.textContent = e.type;
+    const lbl = document.createElement("span");
+    lbl.className = "lbl";
+    lbl.textContent = e.label;
+    meta.append(typ, document.createElement("br"), lbl);
+    row.append(cb, meta);
     list.appendChild(row);
   });
 }
 
 function selected() {
   return Array.from(document.querySelectorAll(".item input:checked")).map((c) => entries[Number(c.dataset.i)]);
-}
-
-function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 $("sendSel").addEventListener("click", async () => {
