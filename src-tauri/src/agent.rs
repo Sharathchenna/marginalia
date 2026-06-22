@@ -8,7 +8,16 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::AppState;
+
+// keep at most this many stderr lines for diagnostics on an unexpected exit
+fn last_chars(s: &str, n: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let start = chars.len().saturating_sub(n);
+    chars[start..].iter().collect()
+}
 
 /// Find a usable `node` binary. A GUI app launched from Finder has a minimal
 /// PATH, so fall back to common install locations.
@@ -49,7 +58,12 @@ fn resolve_sidecar(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
 }
 
 #[tauri::command]
-pub fn ai_chat(app: AppHandle, request_id: String, payload: Value) -> Result<(), String> {
+pub fn ai_chat(
+    app: AppHandle,
+    request_id: String,
+    payload: Value,
+    state: State<AppState>,
+) -> Result<(), String> {
     let node = find_node().ok_or(
         "Node.js was not found. Install Node 18+ (e.g. `brew install node`) to use AI chat.",
     )?;
@@ -76,18 +90,41 @@ pub fn ai_chat(app: AppHandle, request_id: String, payload: Value) -> Result<(),
         .env("PATH", &path_env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped()) // capture diagnostics instead of discarding them
         .spawn()
         .map_err(|e| format!("Failed to start sidecar: {e}"))?;
+
+    // record the pid so ai_cancel can stop this turn
+    if let Ok(mut map) = state.children.lock() {
+        map.insert(request_id.clone(), child.id());
+    }
 
     // write the payload, then close stdin (EOF) so the sidecar starts the turn
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(payload.to_string().as_bytes());
     }
 
+    // drain stderr into a bounded ring buffer (last 20 lines) for error reporting
+    let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    if let Some(stderr) = child.stderr.take() {
+        let buf = stderr_buf.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                if let Ok(mut v) = buf.lock() {
+                    v.push(line);
+                    let len = v.len();
+                    if len > 20 {
+                        v.drain(0..len - 20);
+                    }
+                }
+            }
+        });
+    }
+
     let stdout = child.stdout.take().ok_or("No sidecar stdout")?;
     let app2 = app.clone();
     let rid = request_id.clone();
+    let err_buf = stderr_buf.clone();
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines().map_while(Result::ok) {
@@ -102,11 +139,43 @@ pub fn ai_chat(app: AppHandle, request_id: String, payload: Value) -> Result<(),
             }
         }
         let _ = child.wait();
-        let _ = app2.emit(
-            "agent-event",
-            json!({ "__marg": true, "requestId": rid, "type": "closed" }),
-        );
+        // de-register and surface any stderr tail so a crash isn't silent
+        if let Ok(mut map) = app2.state::<AppState>().children.lock() {
+            map.remove(&rid);
+        }
+        let tail = err_buf.lock().ok().map(|v| v.join("\n")).unwrap_or_default();
+        let tail = tail.trim();
+        let mut closed = json!({ "__marg": true, "requestId": rid, "type": "closed" });
+        if !tail.is_empty() {
+            if let Some(o) = closed.as_object_mut() {
+                o.insert("error".into(), json!(last_chars(tail, 500)));
+            }
+        }
+        let _ = app2.emit("agent-event", closed);
     });
 
+    Ok(())
+}
+
+/// Kill the sidecar process for a given turn (the Stop button / panel unmount).
+#[tauri::command]
+pub fn ai_cancel(request_id: String, state: State<AppState>) -> Result<(), String> {
+    let pid = state
+        .children
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(&request_id));
+    if let Some(pid) = pid {
+        #[cfg(unix)]
+        {
+            let _ = Command::new("kill").arg("-TERM").arg(pid.to_string()).status();
+        }
+        #[cfg(windows)]
+        {
+            let _ = Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .status();
+        }
+    }
     Ok(())
 }

@@ -11,10 +11,18 @@ const K_COLLECTIONS = "marginalia.collections";
 const K_SETTINGS = "marginalia.settings";
 
 function read<T>(key: string, fallback: T): T {
+  const raw = localStorage.getItem(key);
+  if (raw == null) return fallback; // key absent → seed/fallback is correct
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    return JSON.parse(raw) as T;
   } catch {
+    // Key present but unparseable: preserve the raw bytes so the user's data is
+    // recoverable instead of being silently overwritten by the fallback.
+    try {
+      localStorage.setItem(key + ".corrupt", raw);
+    } catch {
+      /* ignore */
+    }
     return fallback;
   }
 }
@@ -22,7 +30,8 @@ function write<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    /* quota / private mode — operate in-memory for the session */
+    /* quota exceeded / private mode — the write is dropped (state stays in the
+       React store for this session); nothing else we can safely do here */
   }
 }
 

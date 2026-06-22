@@ -2,6 +2,7 @@
 // database and exposes the same operations the localStorage backend provides in
 // the browser, so the React frontend is identical on both.
 mod agent;
+mod capture;
 mod db;
 mod embeddings;
 mod metadata;
@@ -16,6 +17,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 struct AppState {
     db: Mutex<Connection>,
     watcher: Mutex<Option<RecommendedWatcher>>,
+    // live AI sidecar processes by requestId, so ai_cancel can kill them
+    children: Mutex<std::collections::HashMap<String, u32>>,
 }
 
 const SEED: &str = include_str!("../seed.json");
@@ -33,7 +36,11 @@ fn default_settings() -> Value {
         "model": "",
         "embedProvider": "off",
         "embedModel": "voyage-3.5-lite",
-        "voyageKey": ""
+        "voyageKey": "",
+        "autoBib": false,
+        "webdavUrl": "",
+        "webdavUser": "",
+        "webdavPass": ""
     })
 }
 
@@ -41,43 +48,43 @@ fn default_settings() -> Value {
 
 #[tauri::command]
 fn list_papers(state: State<AppState>) -> Result<Vec<Value>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     db::list_papers(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn replace_papers(papers: Vec<Value>, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     db::replace_papers(&conn, &papers).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn add_paper(paper: Value, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     db::upsert_paper(&conn, &paper).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn update_paper(id: String, patch: Value, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     db::update_paper(&conn, &id, &patch).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_paper(id: String, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     db::delete_paper(&conn, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn search_papers(query: String, state: State<AppState>) -> Result<Vec<Value>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     db::search(&conn, &query).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn list_collections(state: State<AppState>) -> Result<Value, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     Ok(db::get_kv(&conn, "collections")
         .map_err(|e| e.to_string())?
         .unwrap_or_else(|| json!([])))
@@ -85,13 +92,13 @@ fn list_collections(state: State<AppState>) -> Result<Value, String> {
 
 #[tauri::command]
 fn save_collections(collections: Value, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     db::set_kv(&conn, "collections", &collections).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Result<Value, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     let mut settings = default_settings();
     if let Some(saved) = db::get_kv(&conn, "settings").map_err(|e| e.to_string())? {
         if let (Some(obj), Some(s)) = (settings.as_object_mut(), saved.as_object()) {
@@ -105,7 +112,7 @@ fn get_settings(state: State<AppState>) -> Result<Value, String> {
 
 #[tauri::command]
 fn save_settings(patch: Value, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     let mut merged = default_settings();
     if let Some(saved) = db::get_kv(&conn, "settings").map_err(|e| e.to_string())? {
         if let (Some(obj), Some(s)) = (merged.as_object_mut(), saved.as_object()) {
@@ -125,6 +132,69 @@ fn save_settings(patch: Value, state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 fn lookup_identifier(identifier: String) -> Result<Value, String> {
     metadata::lookup(&identifier)
+}
+
+/// Check one DOI against Crossref's Retraction Watch data. Privacy-preserving:
+/// only the DOI is sent. Returns `{ retracted, type?, reason?, date?, url? }`.
+#[tauri::command]
+fn check_retraction(doi: String) -> Result<Value, String> {
+    metadata::check_retraction(&doi)
+}
+
+/// The localhost port the web-capture listener bound to (0 if it failed to bind).
+#[tauri::command]
+fn capture_port() -> u16 {
+    capture::port()
+}
+
+// ---------- optional sync (user-hosted WebDAV) ----------
+// A privacy-respecting cross-device option: the user points at their own WebDAV
+// server (Nextcloud, Fastmail, a self-hosted box…). We PUT/GET a single snapshot
+// file; no Marginalia-operated server is involved.
+
+fn webdav_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn webdav_upload(url: String, user: String, pass: String, contents: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("WebDAV URL must start with http:// or https://".into());
+    }
+    let mut req = webdav_client()?.put(&url).body(contents);
+    if !user.is_empty() {
+        req = req.basic_auth(user, Some(pass));
+    }
+    let resp = req.send().map_err(|e| e.to_string())?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("WebDAV upload failed ({})", resp.status()))
+    }
+}
+
+/// Download the snapshot. A 404 (nothing uploaded yet) returns an empty string
+/// rather than an error, so first-time "pull" is a no-op the UI can handle.
+#[tauri::command]
+fn webdav_download(url: String, user: String, pass: String) -> Result<String, String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("WebDAV URL must start with http:// or https://".into());
+    }
+    let mut req = webdav_client()?.get(&url);
+    if !user.is_empty() {
+        req = req.basic_auth(user, Some(pass));
+    }
+    let resp = req.send().map_err(|e| e.to_string())?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(String::new());
+    }
+    if !resp.status().is_success() {
+        return Err(format!("WebDAV download failed ({})", resp.status()));
+    }
+    resp.text().map_err(|e| e.to_string())
 }
 
 /// Open an external URL in the system browser (PDF hyperlinks). Only http(s)/mailto.
@@ -171,7 +241,7 @@ fn embed_settings(conn: &Connection) -> (Option<String>, String) {
 
 #[tauri::command]
 fn embedding_status(state: State<AppState>) -> Result<Value, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     let (key, model) = embed_settings(&conn);
     let count = db::embedding_count(&conn, &model).map_err(|e| e.to_string())?;
     Ok(json!({ "embedded": count, "model": model, "hasKey": key.is_some() }))
@@ -181,26 +251,31 @@ fn embedding_status(state: State<AppState>) -> Result<Value, String> {
 /// `items` is `[{ id, text }]`; unchanged papers (same model+hash) are skipped.
 #[tauri::command]
 fn embed_papers(items: Vec<Value>, state: State<AppState>) -> Result<Value, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let (key, model) = embed_settings(&conn);
-    let key = key.ok_or("No Voyage API key set. Add it in Settings → Semantic search.")?;
-
-    let mut to_embed: Vec<(String, String, String)> = Vec::new(); // (id, text, hash)
-    let mut skipped = 0usize;
-    for it in &items {
-        let id = it.get("id").and_then(Value::as_str).unwrap_or("");
-        let text = it.get("text").and_then(Value::as_str).unwrap_or("");
-        if id.is_empty() || text.trim().is_empty() {
-            continue;
+    // 1. read settings + decide what needs (re)embedding — under the DB lock.
+    let (key, model, to_embed, skipped) = {
+        let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+        let (key, model) = embed_settings(&conn);
+        let key = key.ok_or("No Voyage API key set. Add it in Settings → Semantic search.")?;
+        let mut to_embed: Vec<(String, String, String)> = Vec::new(); // (id, text, hash)
+        let mut skipped = 0usize;
+        for it in &items {
+            let id = it.get("id").and_then(Value::as_str).unwrap_or("");
+            let text = it.get("text").and_then(Value::as_str).unwrap_or("");
+            if id.is_empty() || text.trim().is_empty() {
+                continue;
+            }
+            let hash = embeddings::text_hash(text);
+            match db::embedding_meta(&conn, id).map_err(|e| e.to_string())? {
+                Some((m, h)) if m == model && h == hash => skipped += 1,
+                _ => to_embed.push((id.to_string(), text.to_string(), hash)),
+            }
         }
-        let hash = embeddings::text_hash(text);
-        match db::embedding_meta(&conn, id).map_err(|e| e.to_string())? {
-            Some((m, h)) if m == model && h == hash => skipped += 1,
-            _ => to_embed.push((id.to_string(), text.to_string(), hash)),
-        }
-    }
+        (key, model, to_embed, skipped)
+    };
 
-    let mut embedded = 0usize;
+    // 2. call Voyage WITHOUT holding the lock, so other DB commands aren't frozen
+    //    for the whole network round-trip.
+    let mut rows: Vec<(String, usize, String, Vec<u8>)> = Vec::new();
     for chunk in to_embed.chunks(100) {
         let texts: Vec<String> = chunk.iter().map(|(_, t, _)| t.clone()).collect();
         let vecs = embeddings::embed(&key, &model, &texts, "document")?;
@@ -208,20 +283,32 @@ fn embed_papers(items: Vec<Value>, state: State<AppState>) -> Result<Value, Stri
             if vec.is_empty() {
                 continue;
             }
-            db::upsert_embedding(&conn, id, &model, vec.len(), hash, &embeddings::f32_to_bytes(vec))
-                .map_err(|e| e.to_string())?;
-            embedded += 1;
+            rows.push((id.clone(), vec.len(), hash.clone(), embeddings::f32_to_bytes(vec)));
         }
     }
+
+    // 3. persist the new vectors — re-acquire the lock briefly.
+    let embedded = {
+        let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+        let mut n = 0usize;
+        for (id, dim, hash, bytes) in &rows {
+            db::upsert_embedding(&conn, id, &model, *dim, hash, bytes).map_err(|e| e.to_string())?;
+            n += 1;
+        }
+        n
+    };
     Ok(json!({ "embedded": embedded, "skipped": skipped, "total": items.len() }))
 }
 
 /// Embed `query` and return the top-k papers by cosine similarity.
 #[tauri::command]
 fn semantic_search(query: String, k: usize, state: State<AppState>) -> Result<Vec<Value>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let (key, model) = embed_settings(&conn);
+    let (key, model) = {
+        let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+        embed_settings(&conn)
+    };
     let key = key.ok_or("No Voyage API key set.")?;
+    // embed the query lock-free (network), then re-lock only to read vectors
     let qvec = embeddings::embed(&key, &model, &[query], "query")?
         .into_iter()
         .next()
@@ -229,7 +316,10 @@ fn semantic_search(query: String, k: usize, state: State<AppState>) -> Result<Ve
     if qvec.is_empty() {
         return Ok(vec![]);
     }
-    let all = db::all_embeddings(&conn, &model).map_err(|e| e.to_string())?;
+    let all = {
+        let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+        db::all_embeddings(&conn, &model).map_err(|e| e.to_string())?
+    };
     let mut scored: Vec<(String, f32)> = all
         .into_iter()
         .map(|(id, bytes)| (id, embeddings::cosine(&qvec, &embeddings::bytes_to_f32(&bytes))))
@@ -245,7 +335,7 @@ fn semantic_search(query: String, k: usize, state: State<AppState>) -> Result<Ve
 /// Nearest neighbours of one paper (uses stored vectors — no key/network needed).
 #[tauri::command]
 fn similar_papers(id: String, k: usize, state: State<AppState>) -> Result<Vec<Value>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     let (_key, model) = embed_settings(&conn);
     let target = match db::get_embedding_vec(&conn, &id, &model).map_err(|e| e.to_string())? {
         Some(b) => embeddings::bytes_to_f32(&b),
@@ -270,6 +360,42 @@ use base64::Engine;
 
 fn join(dir: &str, file: &str) -> std::path::PathBuf {
     std::path::Path::new(&shellexpand(dir)).join(file)
+}
+
+// Flatten a caller-supplied name to a single safe path component (no separators,
+// no "..", no leading dots) so it can never escape the library folder.
+fn safe_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':') { '_' } else { c })
+        .collect();
+    let trimmed = cleaned.replace("..", "_");
+    let trimmed = trimmed.trim_start_matches(['.', ' ']).trim();
+    if trimmed.is_empty() {
+        "file.pdf".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+// A destination that doesn't clobber an existing file: name.pdf, name-1.pdf, …
+fn unique_dest(dir: &str, filename: &str) -> (std::path::PathBuf, String) {
+    let dest = join(dir, filename);
+    if !dest.exists() {
+        return (dest, filename.to_string());
+    }
+    let path = std::path::Path::new(filename);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("pdf");
+    let mut i = 1;
+    loop {
+        let cand = format!("{stem}-{i}.{ext}");
+        let dest = join(dir, &cand);
+        if !dest.exists() {
+            return (dest, cand);
+        }
+        i += 1;
+    }
 }
 
 #[tauri::command]
@@ -297,16 +423,25 @@ fn read_pdf(path: String) -> Result<String, String> {
 /// Download a PDF into the library folder (skips if already present).
 #[tauri::command]
 fn download_pdf(url: String, dir: String, filename: String) -> Result<String, String> {
-    let dest = join(&dir, &filename);
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Refused to download a non-http(s) URL".into());
+    }
+    let name = safe_filename(&filename);
+    let dest = join(&dir, &name);
     if !dest.exists() {
         std::fs::create_dir_all(shellexpand(&dir)).map_err(|e| e.to_string())?;
-        let bytes = reqwest::blocking::get(&url)
+        let bytes = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?
+            .get(&url)
+            .send()
             .and_then(|r| r.error_for_status())
             .and_then(|r| r.bytes())
             .map_err(|e| e.to_string())?;
         std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
     }
-    Ok(filename)
+    Ok(name)
 }
 
 /// Recursively list every PDF under the library folder (incl. subfolders).
@@ -357,13 +492,16 @@ fn walk_pdfs(
 #[tauri::command]
 fn import_pdf(src: String, dir: String) -> Result<String, String> {
     let src_path = std::path::PathBuf::from(shellexpand(&src));
-    let name = src_path
+    let raw = src_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .ok_or("Invalid file name")?;
+    let name = safe_filename(&raw);
     std::fs::create_dir_all(shellexpand(&dir)).map_err(|e| e.to_string())?;
-    std::fs::copy(&src_path, join(&dir, &name)).map_err(|e| e.to_string())?;
-    Ok(name)
+    // never overwrite a different PDF that happens to share a filename
+    let (dest, used) = unique_dest(&dir, &name);
+    std::fs::copy(&src_path, &dest).map_err(|e| e.to_string())?;
+    Ok(used)
 }
 
 /// Watch the given folders; emit `watch-import` with the path of each new PDF.
@@ -372,9 +510,21 @@ fn start_watch(app: AppHandle, folders: Vec<String>, state: State<AppState>) -> 
     let handle = app.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(ev) = res {
-            if matches!(ev.kind, EventKind::Create(_)) {
+            // Create OR a rename-into-place (how browsers finish .crdownload/.part
+            // downloads). Case-insensitive extension; skip empty/partial files.
+            let is_new = matches!(
+                ev.kind,
+                EventKind::Create(_) | EventKind::Modify(notify::event::ModifyKind::Name(_))
+            );
+            if is_new {
                 for path in ev.paths {
-                    if path.extension().and_then(|e| e.to_str()) == Some("pdf") {
+                    let is_pdf = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|e| e.eq_ignore_ascii_case("pdf"))
+                        .unwrap_or(false);
+                    let ready = std::fs::metadata(&path).map(|m| m.len() > 0).unwrap_or(false);
+                    if is_pdf && ready {
                         let _ = handle.emit("watch-import", path.to_string_lossy().to_string());
                     }
                 }
@@ -386,8 +536,35 @@ fn start_watch(app: AppHandle, folders: Vec<String>, state: State<AppState>) -> 
         let expanded = shellexpand(&f);
         let _ = watcher.watch(std::path::Path::new(&expanded), RecursiveMode::NonRecursive);
     }
-    *state.watcher.lock().map_err(|e| e.to_string())? = Some(watcher);
+    *state.watcher.lock().unwrap_or_else(|e| e.into_inner()) = Some(watcher);
     Ok(())
+}
+
+/// If the window's center lies outside every connected monitor (e.g. it was
+/// restored onto an external display that's no longer plugged in), resize it to
+/// fit and recenter it on the primary monitor.
+fn ensure_on_screen(win: &tauri::WebviewWindow) {
+    use tauri::{LogicalSize, PhysicalPosition};
+    let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) else {
+        return;
+    };
+    let cx = pos.x + size.width as i32 / 2;
+    let cy = pos.y + size.height as i32 / 2;
+    let monitors = win.available_monitors().unwrap_or_default();
+    let visible = monitors.iter().any(|m| {
+        let (mp, ms) = (m.position(), m.size());
+        cx >= mp.x && cx < mp.x + ms.width as i32 && cy >= mp.y && cy < mp.y + ms.height as i32
+    });
+    if visible {
+        return;
+    }
+    if let Ok(Some(primary)) = win.primary_monitor() {
+        let (mp, ms, sf) = (primary.position(), primary.size(), primary.scale_factor());
+        let lw = ((ms.width as f64 / sf) - 160.0).clamp(900.0, 1280.0);
+        let lh = ((ms.height as f64 / sf) - 140.0).clamp(600.0, 820.0);
+        let _ = win.set_size(LogicalSize::new(lw, lh));
+        let _ = win.set_position(PhysicalPosition::new(mp.x + 80, mp.y + 70));
+    }
 }
 
 fn shellexpand(p: &str) -> String {
@@ -431,7 +608,12 @@ pub fn run() {
             app.manage(AppState {
                 db: Mutex::new(conn),
                 watcher: Mutex::new(None),
+                children: Mutex::new(std::collections::HashMap::new()),
             });
+
+            // One-click web capture: a localhost listener a bookmarklet can POST
+            // the current page URL to (resolved by the frontend's lookup pipeline).
+            capture::start(app.handle().clone());
 
             // Native window translucency. On macOS 26 (Tahoe) the system renders
             // this NSVisualEffect material as Liquid Glass automatically; on older
@@ -457,6 +639,22 @@ pub fn run() {
                     let _ = apply_acrylic(&win, Some((18, 18, 20, 125)));
                 }
             }
+
+            // Recover a window that the OS restored onto a now-disconnected
+            // monitor: if its center isn't inside any connected display, recenter
+            // it on the primary one. Without this, unplugging an external screen
+            // can leave Marginalia stranded off-screen with no way to grab it.
+            // macOS restores the saved NSWindow frame *after* this setup hook, so
+            // we also re-check shortly after launch on the main thread.
+            if let Some(win) = app.get_webview_window("main") {
+                ensure_on_screen(&win);
+                let w = win.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    let wc = w.clone();
+                    let _ = w.run_on_main_thread(move || ensure_on_screen(&wc));
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -471,6 +669,10 @@ pub fn run() {
             get_settings,
             save_settings,
             lookup_identifier,
+            check_retraction,
+            capture_port,
+            webdav_upload,
+            webdav_download,
             open_url,
             start_watch,
             ensure_dir,
@@ -483,7 +685,8 @@ pub fn run() {
             embed_papers,
             semantic_search,
             similar_papers,
-            agent::ai_chat
+            agent::ai_chat,
+            agent::ai_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running Marginalia");

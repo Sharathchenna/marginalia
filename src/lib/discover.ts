@@ -85,29 +85,106 @@ async function searchOpenAlex(query: string): Promise<DiscoverHit[]> {
 }
 
 // ---------- Semantic Scholar ----------
+const S2_FIELDS = "title,abstract,year,venue,authors,externalIds,citationCount,tldr";
+// The recommendations endpoint accepts a SUBSET of paper fields — notably it
+// rejects `tldr` (returns HTTP 400), unlike the search endpoint. Keep a separate
+// list so a recommendations call never 400s on an unsupported field.
+const S2_REC_FIELDS = "title,abstract,year,venue,authors,externalIds,citationCount";
+function mapS2(p: any): DiscoverHit {
+  const names = (p.authors ?? []).map((a: any) => a.name).filter(Boolean);
+  return {
+    id: p.paperId || "",
+    source: "semanticscholar",
+    title: p.title || "Untitled",
+    authorsShort: shortAuthors(names.map(lastName)),
+    authorsFull: names.join(", "),
+    year: p.year || 0,
+    venue: p.venue || "—",
+    doi: p.externalIds?.DOI || "—",
+    arxiv: p.externalIds?.ArXiv || "—",
+    abstract: p.abstract || "",
+    tldr: p.tldr?.text || undefined,
+    citedBy: p.citationCount || 0,
+  };
+}
 async function searchSemanticScholar(query: string): Promise<DiscoverHit[]> {
   const base = root("/semanticscholar", "https://api.semanticscholar.org");
-  const fields = "title,abstract,year,venue,authors,externalIds,citationCount,tldr";
   const data: any = await getJson(
-    `${base}/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=12&fields=${fields}`,
+    `${base}/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=12&fields=${S2_FIELDS}`,
   );
-  return (data.data ?? []).map((p: any): DiscoverHit => {
-    const names = (p.authors ?? []).map((a: any) => a.name).filter(Boolean);
-    return {
-      id: p.paperId || "",
-      source: "semanticscholar",
-      title: p.title || "Untitled",
-      authorsShort: shortAuthors(names.map(lastName)),
-      authorsFull: names.join(", "),
-      year: p.year || 0,
-      venue: p.venue || "—",
-      doi: p.externalIds?.DOI || "—",
-      arxiv: p.externalIds?.ArXiv || "—",
-      abstract: p.abstract || "",
-      tldr: p.tldr?.text || undefined,
-      citedBy: p.citationCount || 0,
-    };
-  });
+  return (data.data ?? []).map(mapS2);
+}
+
+// Semantic Scholar Recommendations API: "papers you should read" given seeds
+// from the user's library. Seeds are addressed by arXiv id / DOI (no need to
+// resolve to S2 ids first). Returns [] if no usable seeds or the API is down.
+function s2SeedId(p: { doi: string; arxiv: string }): string | null {
+  if (p.arxiv && p.arxiv !== "—") return `ArXiv:${p.arxiv}`;
+  if (p.doi && p.doi !== "—") return `DOI:${p.doi}`;
+  return null;
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// GET with one retry on 429 (the unauthenticated S2 pool is rate-limited).
+async function s2Get(url: string): Promise<any> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(url);
+    if (res.status === 429) {
+      await sleep(1300);
+      continue;
+    }
+    if (!res.ok) throw new Error(String(res.status));
+    return res.json();
+  }
+  throw new Error("429");
+}
+
+export async function recommendFromLibrary(
+  seeds: { doi: string; arxiv: string }[],
+  k = 12,
+): Promise<DiscoverHit[]> {
+  // The recommendations API only permits GET cross-origin (a POST batch request
+  // is CORS-blocked in the native app — preflight allows GET,OPTIONS only). Query
+  // the single-seed `forpaper` endpoint SEQUENTIALLY (avoids tripping the shared
+  // rate limit) and stop as soon as we have enough; papers recommended for more
+  // than one seed bubble to the top. Throws only if every seed call fails.
+  //
+  // We try up to 10 seeds because many seminal papers return ZERO recommendations
+  // from this endpoint — if we only tried the first few we'd often show nothing
+  // even when other papers in the library have plenty. Early-stop keeps it fast.
+  const ids = [...new Set(seeds.map(s2SeedId).filter((x): x is string => !!x))].slice(0, 10);
+  if (!ids.length) return [];
+  const base = root("/semanticscholar", "https://api.semanticscholar.org");
+  const score = new Map<string, number>();
+  const byKey = new Map<string, DiscoverHit>();
+  let failures = 0;
+  for (const id of ids) {
+    let list: DiscoverHit[] = [];
+    try {
+      const data = await s2Get(
+        `${base}/recommendations/v1/papers/forpaper/${encodeURIComponent(id)}?fields=${S2_REC_FIELDS}&limit=${k}`,
+      );
+      list = ((data.recommendedPapers ?? []) as any[]).map(mapS2);
+    } catch {
+      failures++;
+    }
+    list.forEach((h, rank) => {
+      const key =
+        h.doi && h.doi !== "—"
+          ? "doi:" + h.doi.toLowerCase()
+          : h.arxiv && h.arxiv !== "—"
+            ? "arx:" + h.arxiv.toLowerCase()
+            : "id:" + h.id;
+      score.set(key, (score.get(key) ?? 0) + 1 / (1 + rank));
+      if (!byKey.has(key)) byKey.set(key, h);
+    });
+    if (byKey.size >= k) break; // enough — stop hitting the API
+  }
+  if (!byKey.size && failures === ids.length) throw new Error("recommendations unavailable");
+  return [...byKey.keys()]
+    .sort((a, b) => (score.get(b) ?? 0) - (score.get(a) ?? 0))
+    .map((key) => byKey.get(key)!)
+    .slice(0, k);
 }
 
 // ---------- arXiv ----------
@@ -252,9 +329,12 @@ export function rrfMerge(lists: DiscoverHit[][]): DiscoverHit[] {
     });
   });
 
+  // Sort on the score captured by the ORIGINAL key — recomputing dedupeKey on a
+  // merged hit can return a different key (doi/arxiv backfilled), losing its score.
   return [...merged.entries()]
-    .map(([k, h]) => ({ ...h, sources: [...(srcs.get(k) || [])] }))
-    .sort((a, b) => (score.get(dedupeKey(b)) || 0) - (score.get(dedupeKey(a)) || 0));
+    .map(([k, h]) => ({ hit: { ...h, sources: [...(srcs.get(k) || [])] }, sc: score.get(k) || 0 }))
+    .sort((a, b) => b.sc - a.sc)
+    .map((x) => x.hit);
 }
 
 // Federated search across selected sources, de-duped and RRF-merged.
@@ -280,7 +360,7 @@ export function hitToPaper(h: DiscoverHit): Paper {
     read: false,
     fav: false,
     added: "discovered",
-    addedTs: 224,
+    addedTs: Date.now(),
     abstract: h.abstract || h.tldr || "",
     notes: "",
     hl: [],

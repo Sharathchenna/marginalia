@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import type { Store } from "../store";
 import type { Paper, ReadingStatus } from "../types";
 import { MoreIcon, SortIcon, StarIcon } from "../icons";
+import { readingPct } from "../lib/reading";
 
 function readDotStyle(p: Paper) {
   return {
@@ -36,7 +37,7 @@ export function Library({ store: s }: { store: Store }) {
       <section className="list-col">
         <div className="list-header">
           <h2>{s.filterTitle}</h2>
-          <span className="count-pill">{s.filtered.length} papers</span>
+          <span className="count-pill">{s.filtered.length} paper{s.filtered.length === 1 ? "" : "s"}</span>
           <div className="spacer" />
           {s.sel.length > 0 && (
             <div className="bulk-bar">
@@ -64,6 +65,13 @@ export function Library({ store: s }: { store: Store }) {
           )}
           <button className="mini-btn" onClick={s.openLibraryChat} title="Chat across these papers">
             ✨ Ask library
+          </button>
+          <button
+            className="mini-btn"
+            onClick={() => s.openClaim("verify")}
+            title="Verify a claim or screen papers for a review"
+          >
+            ✓ Verify
           </button>
           <button className="mini-btn muted" onClick={s.cycleSort}>
             <SortIcon size={12} />
@@ -110,6 +118,9 @@ export function Library({ store: s }: { store: Store }) {
                     onClick={(e) => onRead(e, p.id)}
                   />
                   <span className="cell-title" style={{ fontWeight: p.read ? 450 : 600 }}>
+                    {p.retracted && (
+                      <span className="retracted-flag" title={`${p.retracted.reason} notice`}>⚠ </span>
+                    )}
                     {p.title}
                   </span>
                 </div>
@@ -134,8 +145,18 @@ export function Library({ store: s }: { store: Store }) {
                 onClick={(e) => onRow(e, p.id)}
               >
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <span className="read-dot" style={{ ...readDotStyle(p), marginTop: 5 }} />
-                  <span className="card-title">{p.title}</span>
+                  <span
+                    className="read-dot"
+                    title="Toggle read"
+                    style={{ ...readDotStyle(p), marginTop: 5 }}
+                    onClick={(e) => onRead(e, p.id)}
+                  />
+                  <span className="card-title">
+                    {p.retracted && (
+                      <span className="retracted-flag" title={`${p.retracted.reason} notice`}>⚠ </span>
+                    )}
+                    {p.title}
+                  </span>
                   <button
                     className="star-btn"
                     style={{ color: starColor(p.fav), flex: "none", width: "auto", height: "auto" }}
@@ -151,6 +172,11 @@ export function Library({ store: s }: { store: Store }) {
                     <span key={tg} className="mini-tag">{tg}</span>
                   ))}
                 </div>
+                {readingPct(p) !== null && (
+                  <div className="progress-track" style={{ marginTop: 10 }} title={`${readingPct(p)}% read`}>
+                    <div className="progress-bar" style={{ width: `${readingPct(p)}%` }} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -178,7 +204,11 @@ function EditableText({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  // only resync from props when NOT editing, so a background update (e.g. an AI
+  // extract finishing) doesn't wipe an in-progress edit
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
 
   if (editing) {
     const commit = () => {
@@ -193,6 +223,10 @@ function EditableText({
         rows={4}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setEditing(false); // cancel without saving
+          else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit();
+        }}
       />
     ) : (
       <input
@@ -273,6 +307,30 @@ function DetailPanel({ store: s }: { store: Store }) {
             />
           </p>
 
+          {cur.retracted && (
+            <div className="retraction-banner" role="alert">
+              <span className="retraction-badge">⚠ {cur.retracted.reason}</span>
+              <span className="retraction-text">
+                This work has a {cur.retracted.reason.toLowerCase()} notice
+                {cur.retracted.date ? ` (${cur.retracted.date})` : ""}.
+                {cur.retracted.url && (
+                  <>
+                    {" "}
+                    <a
+                      href={cur.retracted.url}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        s.openExternal(cur.retracted!.url);
+                      }}
+                    >
+                      View notice
+                    </a>
+                  </>
+                )}
+              </span>
+            </div>
+          )}
+
           {/* reading status */}
           <div className="seg-group" style={{ marginTop: 12 }}>
             {STATUSES.map((st) => (
@@ -286,6 +344,17 @@ function DetailPanel({ store: s }: { store: Store }) {
               </button>
             ))}
           </div>
+
+          {readingPct(cur) !== null && (
+            <div className="reading-progress" title={`Page ${cur.lastPage} of ${cur.pages}`}>
+              <div className="progress-track">
+                <div className="progress-bar" style={{ width: `${readingPct(cur)}%` }} />
+              </div>
+              <span className="progress-label">
+                {readingPct(cur)}% · page {cur.lastPage} of {cur.pages}
+              </span>
+            </div>
+          )}
 
           <div className="detail-actions">
             <button className="btn-open" onClick={() => s.openReader(cur.id)}>Open in Reader</button>

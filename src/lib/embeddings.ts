@@ -41,6 +41,8 @@ export async function embeddingStatus(): Promise<EmbedStatus> {
 export async function embedPapers(
   items: { id: string; text: string }[],
 ): Promise<{ embedded: number; skipped: number; total: number }> {
+  // native-only command — no-op in the web preview rather than throwing
+  if (!isTauri()) return { embedded: 0, skipped: 0, total: items.length };
   return invoke("embed_papers", { items });
 }
 

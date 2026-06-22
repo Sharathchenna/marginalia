@@ -12,7 +12,11 @@ import {
 } from "../icons";
 
 export function Sidebar({ store: s }: { store: Store }) {
-  const allTags = [...new Set(s.papers.flatMap((p) => p.tags))];
+  // Only the most-used tags — a full list overwhelms the sidebar. The rest are
+  // reachable via ⌘K search and the detail panel.
+  const tagFreq = new Map<string, number>();
+  for (const p of s.papers) for (const t of p.tags) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
+  const topTags = [...tagFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t]) => t);
   const isF = (f: string) => s.filter === f && s.screen === "library";
 
   return (
@@ -27,11 +31,6 @@ export function Sidebar({ store: s }: { store: Store }) {
             <AllPapersIcon size={15} />
             <span className="grow">All Papers</span>
             <span className="nav-count">{s.counts.all}</span>
-          </button>
-          <button className="nav-item" data-active={isF("recent")} onClick={() => s.pickFilter("recent")}>
-            <ClockIcon size={15} />
-            <span className="grow">Recently Added</span>
-            <span className="nav-count">{s.counts.recent}</span>
           </button>
           <button className="nav-item" data-active={isF("fav")} onClick={() => s.pickFilter("fav")}>
             <StarNavIcon size={15} />
@@ -99,21 +98,25 @@ export function Sidebar({ store: s }: { store: Store }) {
           ))}
         </div>
 
-        <div style={{ padding: "18px 8px 6px" }}>
-          <span className="section-label">Tags</span>
-        </div>
-        <div className="tag-wrap">
-          {allTags.map((t) => (
-            <button
-              key={t}
-              className="tag-chip"
-              data-active={isF("tag:" + t)}
-              onClick={() => s.pickFilter("tag:" + t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {topTags.length > 0 && (
+          <>
+            <div style={{ padding: "18px 8px 6px" }}>
+              <span className="section-label">Top tags</span>
+            </div>
+            <div className="tag-wrap">
+              {topTags.map((t) => (
+                <button
+                  key={t}
+                  className="tag-chip"
+                  data-active={isF("tag:" + t)}
+                  onClick={() => s.pickFilter("tag:" + t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="sidebar-footer">
@@ -145,11 +148,6 @@ export function Sidebar({ store: s }: { store: Store }) {
           <SearchIcon size={15} />
           <span className="grow">Discover</span>
         </button>
-        <div className="watch-row">
-          <WatchFolderIcon size={15} />
-          <span className="grow">Watch Folder</span>
-          <span className="on">on</span>
-        </div>
         <button className="nav-item" data-active={s.screen === "settings"} onClick={() => s.goScreen("settings")}>
           <SettingsIcon size={15} />
           <span className="grow">Settings</span>

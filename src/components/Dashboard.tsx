@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { Store } from "../store";
 import type { ReadingStatus } from "../types";
+import { relativeTime } from "../lib/time";
+import { readingPct } from "../lib/reading";
 
 function effStatus(read: boolean, status?: ReadingStatus): ReadingStatus {
   return status ?? (read ? "done" : "unread");
@@ -19,6 +21,13 @@ export function Dashboard({ store: s }: { store: Store }) {
     const withNotes = papers.filter((p) => p.notes.trim()).length;
     return { total: papers.length, highlights, done, reading, recent, topTags, withNotes };
   }, [s.papers]);
+
+  // Load "papers you should read" once when the dashboard first has a library.
+  const loadRecs = s.loadRecommendations;
+  useEffect(() => {
+    if (s.papers.length > 0 && s.recs.length === 0) void loadRecs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.papers.length]);
 
   const card = (label: string, value: number | string, onClick?: () => void) => (
     <button className="stat-card" onClick={onClick} disabled={!onClick}>
@@ -39,7 +48,7 @@ export function Dashboard({ store: s }: { store: Store }) {
           {card("Read", stats.done)}
           {card("Highlights", stats.highlights, () => s.goScreen("flashcards"))}
           {card("Favorites", s.counts.fav, () => s.pickFilter("fav"))}
-          {card("Untagged", s.counts.untagged)}
+          {card("Untagged", s.counts.untagged, () => s.pickFilter("untagged"))}
         </div>
 
         {s.counts.untagged > 0 && (
@@ -56,16 +65,87 @@ export function Dashboard({ store: s }: { store: Store }) {
           </div>
         )}
 
+        {stats.total > 0 && (
+          <section className="dash-section">
+            <h2 className="dash-h2" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              Recommended for you
+              {s.recsLoading && <span className="spinner" />}
+              <button
+                className="mini-btn muted"
+                style={{ marginLeft: "auto" }}
+                disabled={s.recsLoading}
+                onClick={s.loadRecommendations}
+              >
+                ↻ Refresh
+              </button>
+            </h2>
+            <p className="desc" style={{ marginTop: 0 }}>
+              From Semantic Scholar, based on your favorites and recent reads.
+            </p>
+            {!s.recsLoading && s.recs.length === 0 && (
+              <p className="desc" style={{ margin: "6px 0 0", color: "var(--text-3)" }}>
+                {s.recsError || "No recommendations yet."}
+              </p>
+            )}
+            <div className="dash-list">
+              {s.recs.map((h) => (
+                <div key={h.id} className="dash-item" style={{ cursor: "default" }}>
+                  <span className="dash-item-title">{h.title}</span>
+                  <span className="dash-item-meta">
+                    {h.authorsShort} · {h.year || "—"}
+                    {h.citedBy ? ` · ${h.citedBy} citations` : ""}
+                  </span>
+                  {h.tldr && (
+                    <span className="dash-item-meta" style={{ marginTop: 4, color: "var(--text-2)" }}>
+                      {h.tldr.length > 160 ? h.tldr.slice(0, 160) + "…" : h.tldr}
+                    </span>
+                  )}
+                  <div style={{ display: "flex", gap: 6, marginTop: 7 }}>
+                    <button className="mini-btn" onClick={() => s.addDiscovered(h)}>
+                      + Add
+                    </button>
+                    {(h.arxiv !== "—" || h.doi !== "—") && (
+                      <button
+                        className="mini-btn muted"
+                        onClick={() =>
+                          s.openExternal(
+                            h.arxiv !== "—"
+                              ? `https://arxiv.org/abs/${h.arxiv}`
+                              : `https://doi.org/${h.doi}`,
+                          )
+                        }
+                      >
+                        Open
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {stats.reading.length > 0 && (
           <section className="dash-section">
             <h2 className="dash-h2">Continue reading</h2>
             <div className="dash-list">
-              {stats.reading.map((p) => (
-                <button key={p.id} className="dash-item" onClick={() => s.openReader(p.id)}>
-                  <span className="dash-item-title">{p.title}</span>
-                  <span className="dash-item-meta">{p.authors} · {p.year || "—"}</span>
-                </button>
-              ))}
+              {stats.reading.map((p) => {
+                const pct = readingPct(p);
+                return (
+                  <button key={p.id} className="dash-item" onClick={() => s.openReader(p.id)}>
+                    <span className="dash-item-title">{p.title}</span>
+                    <span className="dash-item-meta">
+                      {p.authors} · {p.year || "—"}
+                      {pct !== null ? ` · ${pct}% read` : ""}
+                    </span>
+                    {pct !== null && (
+                      <div className="progress-track" style={{ marginTop: 7 }}>
+                        <div className="progress-bar" style={{ width: `${pct}%` }} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </section>
         )}
@@ -83,7 +163,7 @@ export function Dashboard({ store: s }: { store: Store }) {
                 }}
               >
                 <span className="dash-item-title">{p.title}</span>
-                <span className="dash-item-meta">{p.authors} · {p.year || "—"} · {p.added}</span>
+                <span className="dash-item-meta">{p.authors} · {p.year || "—"} · {relativeTime(p.addedTs) || p.added}</span>
               </button>
             ))}
             {stats.recent.length === 0 && (

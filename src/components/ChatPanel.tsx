@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Store } from "../store";
@@ -35,6 +35,13 @@ export function ChatPanel({
   const [error, setError] = useState("");
   const [model, setModel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
+  // whether the view is pinned to the bottom (don't yank the user back up if
+  // they've scrolled away to re-read while the answer streams)
+  const stick = useRef(true);
+
+  // abort any in-flight turn if the panel unmounts (e.g. drawer closed)
+  useEffect(() => () => cancelRef.current?.(), []);
 
   const patchLast = (fn: (t: Turn) => Turn) =>
     setMessages((m) => {
@@ -45,16 +52,35 @@ export function ChatPanel({
 
   const ready = library ? s.filtered.length > 0 : !!paper;
 
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
   const scrollDown = () =>
     requestAnimationFrame(() => {
-      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const el = scrollRef.current;
+      if (el && stick.current) el.scrollTop = el.scrollHeight;
     });
+
+  const stop = () => {
+    cancelRef.current?.();
+    cancelRef.current = null;
+    setBusy(false);
+    setStatus("");
+    setMessages((m) => {
+      const last = m[m.length - 1];
+      if (last?.role === "assistant" && !last.text && !last.thinking) return m.slice(0, -1);
+      if (last?.role === "assistant") return [...m.slice(0, -1), { ...last, text: last.text + "\n\n_(stopped)_" }];
+      return m;
+    });
+  };
 
   const send = async () => {
     const question = input.trim();
     if (!question || busy || !ready) return;
     setError("");
     setInput("");
+    stick.current = true; // a fresh question scrolls to show the answer
     const history = messages.map((m) => ({ role: m.role, text: m.text }));
     setMessages((m) => [...m, { role: "user", text: question }, { role: "assistant", text: "" }]);
     setBusy(true);
@@ -79,11 +105,13 @@ export function ChatPanel({
       },
       onDone: (info?: { model: string | null }) => {
         if (info?.model) setModel(info.model);
+        cancelRef.current = null;
         setBusy(false);
         setStatus("");
         scrollDown();
       },
       onError: (msg: string) => {
+        cancelRef.current = null;
         setBusy(false);
         setStatus("");
         setError(msg);
@@ -104,12 +132,19 @@ export function ChatPanel({
         abstract: p.abstract,
         summary: p.summary,
       }));
-      await askLibrary(ctx, question, history, handlers);
+      cancelRef.current = await askLibrary(ctx, question, history, handlers);
     } else if (paper) {
       const pdfPath = paper.file
         ? `${s.libraryLocation.replace(/\/+$/, "")}/${paper.file}`
         : undefined;
-      await chatAboutPaper(paper, question, history, handlers, pdfPath, s.chatSelection || undefined);
+      cancelRef.current = await chatAboutPaper(
+        paper,
+        question,
+        history,
+        handlers,
+        pdfPath,
+        s.chatSelection || undefined,
+      );
     }
   };
 
@@ -141,7 +176,7 @@ export function ChatPanel({
         </div>
       )}
 
-      <div className="chat-scroll" ref={scrollRef}>
+      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         {!isAgentAvailable() && (
           <div className="chat-notice">
             AI chat runs in the native desktop app (it spawns the Claude Agent SDK
@@ -201,9 +236,15 @@ export function ChatPanel({
           rows={2}
           disabled={!ready || busy}
         />
-        <button className="btn-go" onClick={send} disabled={!ready || busy || !input.trim()}>
-          {busy ? <span className="spinner" /> : "Send"}
-        </button>
+        {busy ? (
+          <button className="btn-go chat-stop" onClick={stop} title="Stop generating">
+            <span className="stop-square" /> Stop
+          </button>
+        ) : (
+          <button className="btn-go" onClick={send} disabled={!ready || !input.trim()}>
+            Send
+          </button>
+        )}
       </div>
     </div>
   );

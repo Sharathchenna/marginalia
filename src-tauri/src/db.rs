@@ -5,6 +5,14 @@ use serde_json::{json, Value};
 
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
+    // WAL + a busy timeout so a concurrent reader (e.g. the node sidecar opening
+    // the same DB) doesn't immediately hit "database is locked".
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         PRAGMA synchronous=NORMAL;
+         PRAGMA busy_timeout=5000;
+         PRAGMA foreign_keys=ON;",
+    )?;
     migrate(&conn)?;
     Ok(conn)
 }
@@ -31,6 +39,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             hash  TEXT NOT NULL,
             vec   BLOB NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model);
         "#,
     )
 }
@@ -127,12 +136,25 @@ pub fn upsert_paper(conn: &Connection, p: &Value) -> rusqlite::Result<()> {
 }
 
 pub fn replace_papers(conn: &Connection, papers: &[Value]) -> rusqlite::Result<()> {
-    conn.execute("DELETE FROM papers", [])?;
-    conn.execute("DELETE FROM papers_fts", [])?;
-    for p in papers {
-        upsert_paper(conn, p)?;
+    // Atomic wipe+refill: a crash mid-way must not leave an empty/partial library.
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| -> rusqlite::Result<()> {
+        conn.execute("DELETE FROM papers", [])?;
+        conn.execute("DELETE FROM papers_fts", [])?;
+        for p in papers {
+            upsert_paper(conn, p)?;
+        }
+        // drop vectors for papers that no longer exist (avoid polluting search)
+        conn.execute("DELETE FROM embeddings WHERE paper_id NOT IN (SELECT id FROM papers)", [])?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
     }
-    Ok(())
 }
 
 pub fn list_papers(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
@@ -174,12 +196,28 @@ pub fn delete_paper(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+// Build a safe FTS5 MATCH expression: strip operator characters per token and
+// wrap each as a quoted prefix term, so queries like "C++", "a OR b", "(x)" or
+// "foo:bar" don't raise a syntax error.
+fn build_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|t| t.chars().filter(|c| c.is_alphanumeric()).collect::<String>())
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("\"{t}\"*"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn search(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Value>> {
+    let q = build_fts_query(query);
+    if q.is_empty() {
+        return list_papers(conn); // blank/operator-only query → everything
+    }
     let mut stmt = conn.prepare(
         "SELECT p.json FROM papers_fts f JOIN papers p ON p.id = f.id
          WHERE papers_fts MATCH ?1 ORDER BY rank",
     )?;
-    let q = format!("{}*", query.replace('"', " "));
     let rows = stmt.query_map(params![q], |row| {
         let s: String = row.get(0)?;
         Ok(serde_json::from_str::<Value>(&s).unwrap_or(json!({})))

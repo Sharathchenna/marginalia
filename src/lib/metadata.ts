@@ -48,13 +48,18 @@ export function classifyIdentifier(raw: string): Kind {
   // bare arXiv id (e.g. 1706.03762 or 2310.06825v2)
   if (/^\d{4}\.\d{4,5}(v\d+)?$/.test(s))
     return { type: "arxiv", id: s.replace(/v\d+$/, "") };
+  // legacy bare arXiv id (e.g. hep-th/9901001, math.AG/0309001)
+  if (/^[a-z][a-z-]+(\.[A-Z]{2})?\/\d{7}(v\d+)?$/i.test(s))
+    return { type: "arxiv", id: s.replace(/v\d+$/, "") };
   // DOI anywhere in the string (incl. doi.org URLs and "10.48550/arXiv...")
   const doi = s.match(/10\.\d{4,9}\/[^\s"<>]+/);
   if (doi) {
+    // DOIs pasted from prose pick up trailing punctuation — trim it.
+    const id = doi[0].replace(/[.,;:)\]}>]+$/, "");
     // arXiv-minted DOIs map back to the arXiv API for a richer record
-    const arxDoi = doi[0].match(/arXiv\.(\d{4}\.\d{4,5})/i);
+    const arxDoi = id.match(/arXiv\.(\d{4}\.\d{4,5})/i);
     if (arxDoi) return { type: "arxiv", id: arxDoi[1] };
-    return { type: "doi", id: doi[0] };
+    return { type: "doi", id };
   }
   // Any direct PDF URL (HF repo files, lab/personal pages, etc.)
   if (/^https?:\/\/\S+\.pdf(?:[?#]|$)/i.test(s)) return { type: "pdf", url: s };
@@ -82,7 +87,7 @@ function base(paper: Partial<Paper>): Paper {
     read: false,
     fav: false,
     added: "just now",
-    addedTs: 230,
+    addedTs: Date.now(),
     abstract: "",
     notes: "",
     hl: [],

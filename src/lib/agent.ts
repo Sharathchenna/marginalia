@@ -20,6 +20,7 @@ export interface ChatHandlers {
   onDelta?: (text: string) => void;
   onMetadata?: (data: Record<string, unknown>) => void;
   onTags?: (data: AutoTagResult) => void;
+  onVerdict?: (data: AssessResult) => void;
   onThinkingStart?: () => void;
   onThinking?: (text: string) => void;
   onTool?: (info: { name?: string; phase: "start" | "done" }) => void;
@@ -40,6 +41,27 @@ export interface AutoTagResult {
   authorsFull?: string;
   year?: number | string;
   venue?: string;
+}
+
+// Claim verification / systematic-review screening result.
+export type AssessTask = "verify" | "screen";
+export interface AssessItem {
+  id: string;
+  /** verify: supports|contradicts|neutral · screen: include|exclude|maybe */
+  stance: string;
+  evidence: string;
+}
+export interface AssessResult {
+  summary: string;
+  items: AssessItem[];
+}
+export interface AssessPaper {
+  id: string;
+  title: string;
+  authors: string;
+  year: number;
+  abstract: string;
+  summary?: string;
 }
 
 let counter = 0;
@@ -67,7 +89,14 @@ async function runAgent(
   const { listen } = await import("@tauri-apps/api/event");
 
   let unlisten = () => {};
-  const cleanup = () => unlisten();
+  let settled = false; // did we see a terminal done/error yet?
+  const teardown = () => unlisten();
+  // Returned to the caller: stop listening AND ask the backend to kill the
+  // sidecar so a long/looping turn stops accruing cost.
+  const cancel = () => {
+    teardown();
+    void invoke("ai_cancel", { requestId }).catch(() => {});
+  };
 
   unlisten = await listen<Record<string, unknown>>("agent-event", (e) => {
     const p = e.payload;
@@ -82,6 +111,9 @@ async function runAgent(
       case "tags":
         handlers.onTags?.((p.data as AutoTagResult) ?? {});
         break;
+      case "verdict":
+        handlers.onVerdict?.((p.data as AssessResult) ?? { summary: "", items: [] });
+        break;
       case "thinking_start":
         handlers.onThinkingStart?.();
         break;
@@ -95,18 +127,33 @@ async function runAgent(
         });
         break;
       case "done":
-        handlers.onDone?.({
-          cost: (p.cost as number) ?? null,
-          model: (p.model as string) ?? null,
-        });
-        cleanup();
+        settled = true;
+        // the SDK can finish with an error result — surface it, don't pretend success
+        if (p.isError) {
+          handlers.onError?.(String(p.error ?? "The model reported an error."));
+        } else {
+          handlers.onDone?.({
+            cost: (p.cost as number) ?? null,
+            model: (p.model as string) ?? null,
+          });
+        }
+        teardown();
         break;
       case "error":
+        settled = true;
         handlers.onError?.(String(p.error ?? "Unknown error"));
-        cleanup();
+        teardown();
         break;
       case "closed":
-        cleanup();
+        // process exited without a done/error (crash, OOM, non-JSON output) —
+        // don't leave the caller hanging forever.
+        if (!settled) {
+          settled = true;
+          handlers.onError?.(
+            String(p.error ?? "The AI process ended unexpectedly. Check that Node 18+ is installed and you're signed in."),
+          );
+        }
+        teardown();
         break;
     }
   });
@@ -114,10 +161,11 @@ async function runAgent(
   try {
     await invoke("ai_chat", { requestId, payload });
   } catch (err) {
+    settled = true;
     handlers.onError?.(err instanceof Error ? err.message : String(err));
-    cleanup();
+    teardown();
   }
-  return cleanup;
+  return cancel;
 }
 
 export function chatAboutPaper(
@@ -169,6 +217,28 @@ export function autoTag(paper: Paper, vocab: string[], pdfPath?: string): Promis
           got = data;
         },
         onDone: () => (got?.tags ? resolve(got) : reject(new Error("No tags returned."))),
+        onError: (msg) => reject(new Error(msg)),
+      },
+    );
+  });
+}
+
+// Verify a claim (or screen for a review) against a set of papers. Resolves with
+// a structured per-paper verdict.
+export function assessLibrary(
+  task: AssessTask,
+  statement: string,
+  papers: AssessPaper[],
+): Promise<AssessResult> {
+  return new Promise((resolve, reject) => {
+    let got: AssessResult | null = null;
+    runAgent(
+      { mode: "assess", task, statement, papers },
+      {
+        onVerdict: (data) => {
+          got = data;
+        },
+        onDone: () => (got?.items ? resolve(got) : reject(new Error("No assessment returned."))),
         onError: (msg) => reject(new Error(msg)),
       },
     );

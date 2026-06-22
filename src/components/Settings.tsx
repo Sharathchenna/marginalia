@@ -1,13 +1,13 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { exportLibrary } from "../lib/citation";
+import { CITE_STYLE_OPTIONS } from "../lib/csl";
 import { isTauri } from "../lib/tauri";
 import type { Store } from "../store";
-import type { CiteStyle, Density } from "../types";
+import type { Density } from "../types";
 import { FolderIcon } from "../icons";
 
 const EMBED_MODELS = ["voyage-3.5-lite", "voyage-3.5"];
 
-const CITE_STYLES: CiteStyle[] = ["APA", "MLA", "Chicago", "BibTeX"];
 const DENSITIES: Density[] = ["compact", "comfortable"];
 
 function download(name: string, text: string) {
@@ -17,6 +17,80 @@ function download(name: string, text: string) {
   a.download = name;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// The bookmarklet must carry a `javascript:` href, which React refuses to render
+// directly — set it on the anchor via a ref so it stays draggable to the bookmarks bar.
+function Bookmarklet({ port, onCopy }: { port: number; onCopy: (code: string) => void }) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  const code = `javascript:(function(){window.open('http://127.0.0.1:${port}/add?u='+encodeURIComponent(location.href),'marg','width=380,height=180')})()`;
+  useEffect(() => {
+    if (ref.current) ref.current.setAttribute("href", code);
+  }, [code]);
+  return (
+    <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+      <a ref={ref} className="mini-btn" draggable onClick={(e) => e.preventDefault()}>
+        + Save to Marginalia
+      </a>
+      <button className="mini-btn muted" onClick={() => onCopy(code)}>
+        Copy bookmarklet
+      </button>
+    </div>
+  );
+}
+
+// Optional user-hosted WebDAV sync (Nextcloud, Fastmail, self-hosted…). Local
+// state so typing isn't persisted on every keystroke; saved on blur / sync.
+function WebdavSync({ store: s }: { store: Store }) {
+  const [url, setUrl] = useState(s.webdavUrl);
+  const [user, setUser] = useState(s.webdavUser);
+  const [pass, setPass] = useState(s.webdavPass);
+  const save = () => s.setWebdav(url.trim(), user.trim(), pass);
+  return (
+    <div>
+      <h3>Sync (WebDAV)</h3>
+      <p className="desc">
+        Cross-device sync via your own WebDAV server — Nextcloud, Fastmail, a self-hosted
+        box. Point at a snapshot file URL (e.g.{" "}
+        <span className="mono">https://dav.example.com/marginalia.json</span>). Your data never
+        touches a Marginalia server.
+      </p>
+      <input
+        className="id-input"
+        placeholder="https://dav.example.com/marginalia.json"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        onBlur={save}
+      />
+      <div style={{ display: "flex", gap: 9, marginTop: 9 }}>
+        <input
+          className="id-input"
+          style={{ flex: 1 }}
+          placeholder="Username (optional)"
+          value={user}
+          onChange={(e) => setUser(e.target.value)}
+          onBlur={save}
+        />
+        <input
+          className="id-input"
+          style={{ flex: 1 }}
+          type="password"
+          placeholder="Password / app token"
+          value={pass}
+          onChange={(e) => setPass(e.target.value)}
+          onBlur={save}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 9, marginTop: 10, alignItems: "center" }}>
+        <button className="mini-btn" disabled={s.syncing || !url.trim()} onClick={() => { save(); void s.syncToWebdav(); }}>
+          {s.syncing ? <span className="spinner" /> : "↑"} Push to server
+        </button>
+        <button className="mini-btn" disabled={s.syncing || !url.trim()} onClick={() => { save(); void s.syncFromWebdav(); }}>
+          {s.syncing ? <span className="spinner" /> : "↓"} Pull from server
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function Settings({ store: s }: { store: Store }) {
@@ -63,6 +137,26 @@ export function Settings({ store: s }: { store: Store }) {
               </button>
             </div>
           </div>
+
+          {isTauri() && s.capturePort > 0 && (
+            <div>
+              <h3>Web capture</h3>
+              <p className="desc">
+                Drag this button to your browser’s bookmarks bar (or copy it as a new
+                bookmark). Click it on any paper page — arXiv, a journal site, a DOI link,
+                Hugging Face — to send it straight into your library.
+              </p>
+              <Bookmarklet
+                port={s.capturePort}
+                onCopy={(code) => {
+                  void navigator.clipboard
+                    .writeText(code)
+                    .then(() => s.showToast("Bookmarklet copied — make a new bookmark and paste it as the URL"))
+                    .catch(() => s.showToast("Copy failed", "error"));
+                }}
+              />
+            </div>
+          )}
 
           <div>
             <h3>Appearance</h3>
@@ -120,15 +214,15 @@ export function Settings({ store: s }: { store: Store }) {
           <div>
             <h3>Default citation style</h3>
             <p className="desc">Used when copying references and building bibliographies.</p>
-            <div className="seg-group">
-              {CITE_STYLES.map((cs) => (
+            <div className="seg-group" style={{ flexWrap: "wrap" }}>
+              {CITE_STYLE_OPTIONS.map((cs) => (
                 <button
-                  key={cs}
+                  key={String(cs.id)}
                   className="seg-pill"
-                  data-active={s.defaultCite === cs}
-                  onClick={() => s.setDefaultCite(cs)}
+                  data-active={s.defaultCite === cs.id}
+                  onClick={() => s.setDefaultCite(cs.id)}
                 >
-                  {cs}
+                  {cs.label}
                 </button>
               ))}
             </div>
@@ -197,6 +291,47 @@ export function Settings({ store: s }: { store: Store }) {
               </button>
             </div>
           </div>
+
+          <div>
+            <h3>Data quality</h3>
+            <p className="desc">
+              Check your library against Crossref’s Retraction Watch data (one DOI per
+              query — nothing else about your library is sent), and find duplicate papers.
+            </p>
+            <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="mini-btn" onClick={s.checkRetractions}>
+                Check for retractions
+              </button>
+              <button className="mini-btn" onClick={s.openDuplicates}>
+                Find duplicates
+              </button>
+              {s.counts.retracted > 0 && (
+                <span className="desc" style={{ margin: 0, color: "var(--danger)" }}>
+                  ⚠ {s.counts.retracted} retracted
+                </span>
+              )}
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <h3 style={{ marginBottom: 2 }}>Auto-export BibTeX</h3>
+              <p className="desc">
+                Keep a <span className="mono">library.bib</span> in your library folder up to
+                date on every change — point LaTeX / Overleaf at it.
+              </p>
+              <div className="seg-group">
+                <button className="seg-pill" data-active={s.autoBib} onClick={() => s.setAutoBib(true)}>
+                  On
+                </button>
+                <button className="seg-pill" data-active={!s.autoBib} onClick={() => s.setAutoBib(false)}>
+                  Off
+                </button>
+                <button className="mini-btn" style={{ marginLeft: 8 }} onClick={s.exportBibNow}>
+                  Export library.bib now
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {isTauri() && <WebdavSync store={s} />}
 
           <div>
             <h3>Backup &amp; restore</h3>

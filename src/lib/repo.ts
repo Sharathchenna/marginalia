@@ -21,6 +21,12 @@ export interface Settings {
   embedProvider?: string;
   embedModel?: string;
   voyageKey?: string;
+  /** Keep <library>/library.bib in sync with the library on every change. */
+  autoBib?: boolean;
+  /** Optional user-hosted WebDAV sync target (snapshot file URL) + credentials. */
+  webdavUrl?: string;
+  webdavUser?: string;
+  webdavPass?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,7 +34,8 @@ export const DEFAULT_SETTINGS: Settings = {
   density: "compact",
   view: "table",
   defaultCite: "APA",
-  libraryLocation: "~/Documents/Papers",
+  // keep in sync with the Rust default_settings() (src-tauri/src/lib.rs)
+  libraryLocation: "~/Documents/Marginalia",
   watchFolders: ["~/Downloads/Papers", "~/Dropbox/Zotero-inbox"],
   // Browser dev preview skips onboarding; the native app sets this false so the
   // folder picker shows on first run.
