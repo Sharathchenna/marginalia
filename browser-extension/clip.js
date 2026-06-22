@@ -14,7 +14,13 @@
       emDelimiter: "*",
     });
     td.remove(["script", "style", "noscript", "form"]);
-    if (typeof turndownPluginGfm !== "undefined") td.use(turndownPluginGfm.gfm);
+    if (typeof turndownPluginGfm !== "undefined") {
+      // strikethrough + task lists, but NOT the tables rule — its pipe-table
+      // output mangles complex/wide tables (split headers, stray pipes).
+      td.use([turndownPluginGfm.strikethrough, turndownPluginGfm.taskListItems]);
+    }
+    // Keep tables as HTML; the reader renders them (sanitized) faithfully.
+    td.keep(["table"]);
     let markdown = td.turndown(html).replace(/\n{3,}/g, "\n\n").trim();
     if (markdown.length > 200000) markdown = markdown.slice(0, 200000) + "\n\n…(clipped)";
     return {

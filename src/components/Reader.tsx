@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { HL_PALETTE } from "../data";
 import type { Store } from "../store";
@@ -52,6 +52,17 @@ interface Selection {
   x: number;
   y: number;
 }
+
+// Sanitize schema for clipped HTML: the GitHub default plus colspan/rowspan so
+// real (spanning) tables keep their structure. Still strips scripts/handlers.
+const MD_SCHEMA = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    td: [...(defaultSchema.attributes?.td ?? []), "colSpan", "rowSpan"],
+    th: [...(defaultSchema.attributes?.th ?? []), "colSpan", "rowSpan"],
+  },
+};
 
 export function Reader({ store: s }: { store: Store }) {
   const rp = s.readerPaper;
@@ -525,7 +536,7 @@ export function Reader({ store: s }: { store: Store }) {
                   clipped page; rehype-sanitize strips anything unsafe (untrusted). */}
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                rehypePlugins={[rehypeRaw, [rehypeSanitize, MD_SCHEMA]]}
               >
                 {rp.markdown}
               </ReactMarkdown>
