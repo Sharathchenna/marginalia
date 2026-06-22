@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { HL_PALETTE } from "../data";
 import type { Store } from "../store";
@@ -519,7 +521,14 @@ export function Reader({ store: s }: { store: Store }) {
         <div className="reading-scroll" data-pdftheme={pdfTheme} ref={scrollRef}>
           {isMarkdown && (
             <article className="md-page chat-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{rp.markdown}</ReactMarkdown>
+              {/* rehype-raw renders HTML tables/markup that Turndown kept from a
+                  clipped page; rehype-sanitize strips anything unsafe (untrusted). */}
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw, rehypeSanitize]}
+              >
+                {rp.markdown}
+              </ReactMarkdown>
             </article>
           )}
           {!isMarkdown && loading && <div className="pdf-msg">Loading PDF…</div>}

@@ -2729,7 +2729,9 @@ textarea.editable-input {
   border-left: 3px solid var(--border-2);
   color: var(--text-2);
 }
-/* tables (remark-gfm) — scroll horizontally if wide */
+/* tables (remark-gfm pipe tables + sanitized HTML tables from clipped pages).
+   Cells WRAP (no nowrap) so tables fit the reading column; very wide ones still
+   scroll via the block/max-content fallback (the GitHub pattern). */
 .chat-md table {
   display: block;
   width: max-content;
@@ -2737,19 +2739,23 @@ textarea.editable-input {
   overflow-x: auto;
   border-collapse: collapse;
   font-family: "Inter", sans-serif;
-  font-size: 12.5px;
-  margin: 0 0 8px;
+  font-size: 0.9em;
+  line-height: 1.45;
+  margin: 12px 0;
 }
 .chat-md th,
 .chat-md td {
   border: 1px solid var(--border-2);
-  padding: 5px 9px;
+  padding: 6px 11px;
   text-align: left;
-  white-space: nowrap;
+  vertical-align: top;
 }
 .chat-md th {
   background: var(--row-hover);
   font-weight: 620;
+}
+.chat-md tbody tr:nth-child(even) td {
+  background: var(--bg-panel);
 }
 .chat-md hr {
   border: none;
