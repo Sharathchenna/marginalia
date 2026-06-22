@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hermes + Claude — AI engine tradeoffs for Marginalia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&family=Source+Serif+4:opsz,wght@8..60,400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --accent: #4b57d6; --accent-2: #7c84ff; --hermes: #f0883e; --hermes-2: #ffb072;
+    --bg: #0b0b10; --card: rgba(255,255,255,0.035); --brd: rgba(255,255,255,0.09);
+    --t1: #ececf2; --t2: #a6a8b6; --t3: #6f7180;
+    --green: #36c08a; --amber: #e0a23a; --danger: #e05c7e;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", system-ui, sans-serif; color: var(--t1); line-height: 1.6;
+    -webkit-font-smoothing: antialiased; padding-bottom: 80px;
+    background:
+      radial-gradient(1000px 560px at 84% -6%, rgba(240,136,62,0.18), transparent 58%),
+      radial-gradient(1000px 600px at 6% 2%, rgba(75,87,214,0.20), transparent 56%),
+      var(--bg);
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+  header.hero { padding: 84px 0 44px; }
+  .eyebrow { display:inline-flex; align-items:center; gap:9px; font-size:12.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--hermes-2); background:rgba(240,136,62,.1); border:1px solid rgba(240,136,62,.3); padding:6px 13px; border-radius:100px; }
+  h1 { font-family:"Source Serif 4",serif; font-size:clamp(36px,6.4vw,64px); line-height:1.04; font-weight:600; letter-spacing:-.02em; margin:20px 0 16px; }
+  h1 .c { color: var(--accent-2); } h1 .h { color: var(--hermes-2); }
+  .lede { font-size:clamp(16px,2.1vw,19px); color:var(--t2); max-width:720px; }
+
+  section { margin-top: 64px; }
+  .sec-head { display:flex; align-items:baseline; gap:14px; margin-bottom:24px; }
+  .sec-head h2 { font-size:13px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--t2); }
+  .sec-head .rule { flex:1; height:1px; background:linear-gradient(90deg,var(--brd),transparent); }
+
+  /* at-a-glance two cards */
+  .duo { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .glass { background:var(--card); border:1px solid var(--brd); border-radius:18px; padding:24px; backdrop-filter:blur(10px); }
+  .who { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+  .who .dot { width:40px; height:40px; border-radius:11px; display:grid; place-items:center; font-weight:800; font-size:17px; color:#fff; }
+  .who.claude .dot { background:linear-gradient(140deg,var(--accent),var(--accent-2)); }
+  .who.hermes .dot { background:linear-gradient(140deg,var(--hermes),var(--hermes-2)); }
+  .who h3 { font-size:19px; font-weight:680; }
+  .who .tag { font-size:12px; color:var(--t3); }
+  .glass ul { list-style:none; margin-top:6px; }
+  .glass li { font-size:13.5px; color:var(--t2); padding:5px 0 5px 22px; position:relative; }
+  .glass li::before { content:""; position:absolute; left:4px; top:11px; width:6px; height:6px; border-radius:50%; background:var(--accent-2); }
+  .who.hermes ~ ul li::before, .hermes-list li::before { background:var(--hermes-2); }
+
+  /* comparison table */
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--brd); border-radius:14px; overflow:hidden; }
+  th, td { text-align:left; padding:13px 16px; font-size:13.5px; border-bottom:1px solid var(--brd); vertical-align:top; }
+  thead th { font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--t3); background:rgba(255,255,255,.02); }
+  thead th:nth-child(2) { color:var(--accent-2); } thead th:nth-child(3) { color:var(--hermes-2); }
+  td:first-child { color:var(--t1); font-weight:560; width:24%; }
+  td { color:var(--t2); }
+  tr:last-child td { border-bottom:none; }
+  .win { display:inline-block; font-size:10px; font-weight:700; padding:1px 7px; border-radius:100px; margin-left:6px; vertical-align:middle; }
+  .win.c { color:var(--accent-2); background:rgba(124,132,255,.15); }
+  .win.h { color:var(--hermes-2); background:rgba(240,136,62,.16); }
+  .win.t { color:var(--t3); background:rgba(255,255,255,.06); }
+
+  /* pro/con cards */
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .cc { border-radius:14px; padding:18px 20px; }
+  .cc.pro { background:rgba(54,192,138,.06); border:1px solid rgba(54,192,138,.22); }
+  .cc.con { background:rgba(224,162,58,.06); border:1px solid rgba(224,162,58,.22); }
+  .cc h4 { font-size:14px; margin-bottom:4px; }
+  .cc.pro h4 { color:var(--green); } .cc.con h4 { color:var(--amber); }
+  .cc p { font-size:13px; color:var(--t2); }
+
+  /* recommendation */
+  .rec { background:linear-gradient(135deg, rgba(75,87,214,.14), rgba(240,136,62,.10)); border:1px solid var(--brd); border-radius:18px; padding:26px; }
+  .rec h3 { font-family:"Source Serif 4",serif; font-size:24px; font-weight:600; margin-bottom:8px; }
+  .rec p { color:var(--t2); font-size:15px; }
+  .flow { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+  .node { font-size:12.5px; background:var(--card); border:1px solid var(--brd); border-radius:10px; padding:9px 13px; }
+  .node b { color:var(--t1); } .node.c b { color:var(--accent-2); } .node.h b { color:var(--hermes-2); }
+  code { font-family:var(--mono); font-size:12px; background:rgba(255,255,255,.06); border:1px solid var(--brd); padding:2px 7px; border-radius:6px; color:var(--t2); }
+
+  footer { margin-top:72px; padding-top:26px; border-top:1px solid var(--brd); color:var(--t3); font-size:13px; }
+  @media (max-width:780px){ .duo,.cards{grid-template-columns:1fr;} td:first-child{width:auto;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">AI engine · tradeoffs</span>
+    <h1>Adding <span class="h">Hermes</span> alongside <span class="c">Claude</span></h1>
+    <p class="lede">
+      Marginalia's AI (chat, summarize, auto-tag, claim-verify) runs through the Claude
+      Agent SDK today. Nous Research's <b>Hermes</b> is an open-weight model you can run
+      locally — fully private and offline. Here's how they trade off, and where each fits.
+    </p>
+  </header>
+
+  <section>
+    <div class="sec-head"><h2>At a glance</h2><span class="rule"></span></div>
+    <div class="duo">
+      <div class="glass">
+        <div class="who claude"><span class="dot">C</span><div><h3>Claude (current)</h3><span class="tag">Opus 4.8 · Sonnet 4.6 · Haiku 4.5 — cloud API via Agent SDK</span></div></div>
+        <ul>
+          <li>Frontier reasoning &amp; long-context synthesis</li>
+          <li>Robust agentic tool-use loop (reads PDFs itself)</li>
+          <li>Up to ~200K–1M token context</li>
+          <li>Zero setup beyond sign-in / API key</li>
+          <li>Per-token cost · needs network · data leaves the machine</li>
+        </ul>
+      </div>
+      <div class="glass">
+        <div class="who hermes"><span class="dot">H</span><div><h3>Hermes (proposed)</h3><span class="tag">Nous Hermes 3/4 (Llama-based) — local via Ollama / vLLM, OpenAI-compatible</span></div></div>
+        <ul class="hermes-list">
+          <li>Runs 100% locally — private &amp; offline</li>
+          <li>Free after hardware (or cheap via OpenRouter)</li>
+          <li>Open weights — inspectable &amp; fine-tunable</li>
+          <li>Good at summarize / tag / extract / library Q&amp;A</li>
+          <li>Needs a GPU/RAM · weaker frontier reasoning · you own the tool loop</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Head to head</h2><span class="rule"></span></div>
+    <table>
+      <thead><tr><th>Dimension</th><th>Claude (cloud)</th><th>Hermes (local)</th></tr></thead>
+      <tbody>
+        <tr><td>Privacy &amp; data locality</td><td>Text sent to the API <span class="win c">·</span></td><td>Never leaves your machine <span class="win h">wins</span></td></tr>
+        <tr><td>Works offline</td><td>No — needs network</td><td>Yes <span class="win h">wins</span></td></tr>
+        <tr><td>Running cost</td><td>Per-token API spend</td><td>Free locally / cheap on OpenRouter <span class="win h">wins</span></td></tr>
+        <tr><td>Reasoning &amp; synthesis</td><td>Frontier (Opus/Sonnet) <span class="win c">wins</span></td><td>Strong, not frontier</td></tr>
+        <tr><td>Agentic PDF reading</td><td>Built-in Read-tool loop <span class="win c">wins</span></td><td>Function-calling; you build the loop</td></tr>
+        <tr><td>Context window</td><td>200K–1M <span class="win c">wins</span></td><td>8K–128K (variant-dependent)</td></tr>
+        <tr><td>Setup effort</td><td>Sign in / paste key <span class="win c">wins</span></td><td>Install Ollama, pull model, have a GPU</td></tr>
+        <tr><td>Latency</td><td>Consistent (server-side) <span class="win t">depends</span></td><td>Depends on your hardware <span class="win t">depends</span></td></tr>
+        <tr><td>Streaming tokens</td><td>Yes <span class="win t">tie</span></td><td>Yes <span class="win t">tie</span></td></tr>
+        <tr><td>Customization / fine-tune</td><td>Not available</td><td>Open weights — fine-tunable <span class="win h">wins</span></td></tr>
+        <tr><td>Bulk jobs (tag whole library)</td><td>Cost adds up</td><td>Free to run overnight <span class="win h">wins</span></td></tr>
+        <tr><td>Reliability of structured JSON</td><td>Very high <span class="win c">wins</span></td><td>Good with grammar/JSON mode</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Why add Hermes</h2><span class="rule"></span></div>
+    <div class="cards">
+      <div class="cc pro"><h4>Privacy as a real feature</h4><p>Sensitive / unpublished papers can be summarized and tagged with nothing leaving the laptop — squarely on Marginalia's local-first brand.</p></div>
+      <div class="cc pro"><h4>Free bulk processing</h4><p>Auto-tag and embed-summarize an entire library overnight with no API bill — exactly the high-volume, lower-stakes work local models are good at.</p></div>
+      <div class="cc pro"><h4>Offline &amp; resilient</h4><p>Works on a plane or behind a strict firewall; no account, no rate limits, no outage.</p></div>
+      <div class="cc pro"><h4>Choice &amp; trust</h4><p>Open weights users can inspect; an escape hatch if cloud pricing or policy changes.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>The tradeoffs</h2><span class="rule"></span></div>
+    <div class="cards">
+      <div class="cc con"><h4>Hardware burden</h4><p>A useful Hermes (8B–70B) wants a modern GPU or Apple-silicon with enough RAM; small machines get slow, lower-quality output.</p></div>
+      <div class="cc con"><h4>Weaker agentic PDF reading</h4><p>Claude's Agent SDK drives the Read-tool loop reliably. With Hermes you implement tool-calling + the read→answer loop yourself; expect more misfires.</p></div>
+      <div class="cc con"><h4>Two code paths to maintain</h4><p>The sidecar must branch: Agent SDK for Claude vs an OpenAI-compatible HTTP client for Hermes — more surface area, more testing.</p></div>
+      <div class="cc con"><h4>Quality ceiling</h4><p>For hard cross-library synthesis and claim verification, frontier Claude still leads; Hermes is "good enough" for routine tasks.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Recommendation</h2><span class="rule"></span></div>
+    <div class="rec">
+      <h3>Hybrid: Claude by default, Hermes as the private/offline engine</h3>
+      <p>
+        Keep Claude as the default for chat, claim-verification and agentic PDF reading (where
+        frontier reasoning + the tool loop matter). Add Hermes as a selectable provider for the
+        routine, high-volume, privacy-sensitive jobs — <b>summarize, auto-tag, extract, library Q&amp;A</b> —
+        routed through a local OpenAI-compatible endpoint. The user picks per the model dropdown that
+        already exists; their text only leaves the machine when they choose a cloud model.
+      </p>
+      <div class="flow">
+        <span class="node c"><b>Chat / verify / read-PDF</b> → Claude</span>
+        <span class="node h"><b>Summarize / tag / extract</b> → Hermes (local)</span>
+        <span class="node">Provider switch in <code>Settings → AI</code></span>
+        <span class="node">Endpoint: <code>http://localhost:11434/v1</code> (Ollama)</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Marginalia · AI engine evaluation · Nous Hermes (open-weight) vs Claude (Agent SDK). Generated 22 June 2026.
+  </footer>
+
+</div>
+</body>
+</html>
