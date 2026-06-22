@@ -5,14 +5,21 @@ import type { CiteStyle, Paper } from "../types";
 export function citation(p: Paper | undefined, style: CiteStyle): string {
   if (!p) return "";
   const mono = "JetBrains Mono,monospace";
+  // Escape every field that flows from external metadata (arXiv/CrossRef/HF) or
+  // user edits before it reaches dangerouslySetInnerHTML — a "<img onerror=…>"
+  // in a title/abstract must not execute inside the webview. Keep the <i> tags.
+  const title = escapeHtml(p.title);
+  const venue = escapeHtml(p.venue);
+  const authorsFull = escapeHtml(p.authorsFull || p.authors);
+  const authorsShort = escapeHtml(p.authors);
   if (style === "APA") {
-    return `${p.authorsFull || p.authors} (${p.year}). <i>${p.title}</i>. ${p.venue}.`;
+    return `${authorsFull} (${p.year}). <i>${title}</i>. ${venue}.`;
   }
   if (style === "MLA") {
-    return `${p.authors.replace(" et al.", ", et al")}. "${p.title}." <i>${p.venue}</i>, ${p.year}.`;
+    return `${authorsShort.replace(" et al.", ", et al")}. "${title}." <i>${venue}</i>, ${p.year}.`;
   }
   if (style === "Chicago") {
-    return `${p.authorsFull || p.authors}. ${p.year}. "${p.title}." <i>${p.venue}</i>.`;
+    return `${authorsFull}. ${p.year}. "${title}." <i>${venue}</i>.`;
   }
   return `<span style="font-family:${mono};font-size:12.5px;white-space:pre-wrap;display:block;color:var(--text-1)">${escapeHtml(
     toBibTeX(p),
@@ -24,6 +31,9 @@ export function citationText(p: Paper | undefined, style: CiteStyle): string {
   if (style === "BibTeX") return toBibTeX(p);
   return citation(p, style)
     .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .trim();
 }
 
@@ -31,33 +41,76 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Escape LaTeX-special characters so exported .bib values don't break processors.
+function texEscape(s: string): string {
+  const map: Record<string, string> = {
+    "\\": "\\textbackslash{}",
+    "&": "\\&",
+    "%": "\\%",
+    "$": "\\$",
+    "#": "\\#",
+    _: "\\_",
+    "{": "\\{",
+    "}": "\\}",
+    "~": "\\textasciitilde{}",
+    "^": "\\textasciicircum{}",
+  };
+  return s.replace(/[\\&%$#_{}~^]/g, (c) => map[c]);
+}
+
 function citeKey(p: Paper): string {
-  return (p.authors.split(/[\s,&]+/)[0] || "ref").toLowerCase() + p.year;
+  const fam = (p.authors.split(/[\s,&]+/)[0] || "ref").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (fam || "ref") + (p.year || "");
+}
+
+// authorsFull is comma-separated full names ("Ashish Vaswani, Noam Shazeer"); BibTeX
+// wants " and " between authors.
+function bibAuthors(p: Paper): string {
+  const full = p.authorsFull || p.authors;
+  return (
+    full
+      .split(/,\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(" and ") || "Unknown"
+  );
 }
 
 // ---------- export formats ----------
 
-export function toBibTeX(p: Paper): string {
+export function toBibTeX(p: Paper, key?: string): string {
+  const k = key ?? citeKey(p);
+  const isArxiv = !!p.arxiv && p.arxiv !== "—";
+  const hasDoi = !!p.doi && p.doi !== "—";
+  // Without a stored publication type, infer one: preprints → @misc, things with
+  // a DOI → @article, everything else → @inproceedings (the old hardcoded type).
+  const type = isArxiv && !hasDoi ? "misc" : hasDoi ? "article" : "inproceedings";
+  const venueField = type === "article" ? "journal" : type === "inproceedings" ? "booktitle" : "howpublished";
   const fields: [string, string][] = [
     ["title", p.title],
-    ["author", p.authorsFull || p.authors],
-    ["year", String(p.year)],
-    ["booktitle", p.venue],
+    ["author", bibAuthors(p)],
+    ["year", String(p.year || "")],
   ];
-  if (p.doi && p.doi !== "—") fields.push(["doi", p.doi]);
-  if (p.arxiv && p.arxiv !== "—") fields.push(["eprint", p.arxiv]);
+  if (p.venue && p.venue !== "—") fields.push([venueField, p.venue]);
+  if (hasDoi) fields.push(["doi", p.doi]);
+  if (isArxiv) {
+    fields.push(["eprint", p.arxiv]);
+    fields.push(["archivePrefix", "arXiv"]);
+  }
   const body = fields
-    .map(([k, v]) => `  ${k.padEnd(9)} = {${v}}`)
+    .filter(([, v]) => v && v.trim())
+    .map(([f, v]) => `  ${f.padEnd(13)} = {${texEscape(v)}}`)
     .join(",\n");
-  return `@inproceedings{${citeKey(p)},\n${body}\n}`;
+  return `@${type}{${k},\n${body}\n}`;
 }
 
 export function toRIS(p: Paper): string {
-  const lines = ["TY  - CONF", `TI  - ${p.title}`];
+  const tyMap = !!p.arxiv && p.arxiv !== "—" ? "GEN" : !!p.doi && p.doi !== "—" ? "JOUR" : "CONF";
+  const lines = [`TY  - ${tyMap}`, `TI  - ${p.title}`];
   (p.authorsFull || p.authors)
     .split(/,\s*/)
     .filter(Boolean)
-    .forEach((a) => lines.push(`AU  - ${a}`));
+    .forEach((a) => lines.push(`AU  - ${a.trim()}`));
   lines.push(`PY  - ${p.year}`, `T2  - ${p.venue}`);
   if (p.doi && p.doi !== "—") lines.push(`DO  - ${p.doi}`);
   if (p.abstract) lines.push(`AB  - ${p.abstract}`);
@@ -66,9 +119,33 @@ export function toRIS(p: Paper): string {
   return lines.join("\n");
 }
 
+// Spreadsheet-style base-26 suffix: 1→a, 26→z, 27→aa, 28→ab … so a 27th+
+// collision can't emit non-alphabetic chars ({ | } ~) that break BibTeX keys.
+function alphaSuffix(n: number): string {
+  let s = "";
+  while (n > 0) {
+    n--;
+    s = String.fromCharCode(97 + (n % 26)) + s;
+    n = Math.floor(n / 26);
+  }
+  return s;
+}
+
 export function exportLibrary(papers: Paper[], format: "bibtex" | "ris"): string {
-  const fn = format === "bibtex" ? toBibTeX : toRIS;
-  return papers.map(fn).join("\n\n") + "\n";
+  if (format === "ris") return papers.map(toRIS).join("\n\n") + "\n";
+  // De-duplicate colliding cite keys (smith2020 → smith2020a / smith2020b …).
+  const seen = new Map<string, number>();
+  return (
+    papers
+      .map((p) => {
+        const base = citeKey(p);
+        const n = seen.get(base) ?? 0;
+        seen.set(base, n + 1);
+        const key = n === 0 ? base : base + alphaSuffix(n);
+        return toBibTeX(p, key);
+      })
+      .join("\n\n") + "\n"
+  );
 }
 
 // ---------- import (BibTeX + RIS) ----------
@@ -106,7 +183,7 @@ function blankPaper(): Paper {
     read: false,
     fav: false,
     added: "imported",
-    addedTs: 225,
+    addedTs: Date.now(),
     abstract: "",
     notes: "",
     hl: [],
@@ -119,35 +196,93 @@ function finalize(p: Paper): Paper {
   return p;
 }
 
+function applyBibField(p: Paper, authors: string[], key: string, val: string): void {
+  if (key === "title") p.title = val;
+  else if (key === "author")
+    authors.push(...val.split(/\s+and\s+/i).map((s) => s.trim()).filter(Boolean));
+  else if (key === "year") p.year = Number(val.match(/\d{4}/)?.[0]) || p.year;
+  else if (key === "journal" || key === "booktitle") p.venue = val;
+  else if (key === "doi") p.doi = val;
+  else if (key === "eprint" || key === "archiveprefix") p.arxiv = val || p.arxiv;
+  else if (key === "abstract") p.abstract = val;
+}
+
+// Brace-depth-aware BibTeX parser: handles nested braces ("The {BERT} Model"),
+// '@' inside field values, and "-quoted values — the cases the old regex dropped.
 function parseBibTeX(text: string): Paper[] {
   const out: Paper[] = [];
-  const entries = text.match(/@\w+\s*\{[^@]*\}/gs) ?? [];
-  for (const entry of entries) {
-    const p = blankPaper();
-    const authors: string[] = [];
-    const fieldRe = /(\w+)\s*=\s*(\{([^{}]*)\}|"([^"]*)"|(\d+))/g;
-    let m: RegExpExecArray | null;
-    while ((m = fieldRe.exec(entry))) {
-      const key = m[1].toLowerCase();
-      const val = (m[3] ?? m[4] ?? m[5] ?? "").replace(/\s+/g, " ").trim();
-      if (key === "title") p.title = val;
-      else if (key === "author") authors.push(...val.split(/\s+and\s+/i));
-      else if (key === "year") p.year = Number(val) || p.year;
-      else if (key === "journal" || key === "booktitle") p.venue = val;
-      else if (key === "doi") p.doi = val;
-      else if (key === "eprint" || key === "archiveprefix") p.arxiv = val || p.arxiv;
-      else if (key === "abstract") p.abstract = val;
+  let i = 0;
+  while (i < text.length) {
+    const at = text.indexOf("@", i);
+    if (at < 0) break;
+    const open = text.indexOf("{", at);
+    if (open < 0) break;
+    let depth = 0;
+    let end = -1;
+    for (let j = open; j < text.length; j++) {
+      if (text[j] === "{") depth++;
+      else if (text[j] === "}") {
+        depth--;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
     }
-    // BibTeX authors are usually "Family, Given" or "Given Family"
-    p.authorsFull = authors
-      .map((a) => {
-        const [fam, giv] = a.split(/,\s*/);
-        return giv ? `${giv} ${fam}` : a;
-      })
-      .join(", ");
-    out.push(finalize(p));
+    if (end < 0) break;
+    parseBibEntry(text.slice(open + 1, end), out);
+    i = end + 1;
   }
   return out;
+}
+
+function parseBibEntry(entry: string, out: Paper[]): void {
+  const p = blankPaper();
+  const authors: string[] = [];
+  let i = entry.indexOf(",");
+  if (i < 0) return; // no fields
+  i++;
+  while (i < entry.length) {
+    const eq = entry.indexOf("=", i);
+    if (eq < 0) break;
+    const name = entry.slice(i, eq).replace(/[\s,]/g, "").toLowerCase();
+    let k = eq + 1;
+    while (k < entry.length && /\s/.test(entry[k])) k++;
+    let val = "";
+    if (entry[k] === "{") {
+      let depth = 0;
+      let j = k;
+      for (; j < entry.length; j++) {
+        if (entry[j] === "{") depth++;
+        else if (entry[j] === "}") {
+          depth--;
+          if (depth === 0) break;
+        }
+      }
+      val = entry.slice(k + 1, j);
+      i = j + 1;
+    } else if (entry[k] === '"') {
+      let j = k + 1;
+      while (j < entry.length && entry[j] !== '"') j++;
+      val = entry.slice(k + 1, j);
+      i = j + 1;
+    } else {
+      let j = k;
+      while (j < entry.length && entry[j] !== ",") j++;
+      val = entry.slice(k, j);
+      i = j;
+    }
+    const comma = entry.indexOf(",", i);
+    i = comma < 0 ? entry.length : comma + 1;
+    if (name) applyBibField(p, authors, name, val.replace(/[{}]/g, "").replace(/\s+/g, " ").trim());
+  }
+  p.authorsFull = authors
+    .map((a) => {
+      const [fam, giv] = a.split(/,\s*/);
+      return giv ? `${giv} ${fam}` : a;
+    })
+    .join(", ");
+  out.push(finalize(p));
 }
 
 function parseRIS(text: string): Paper[] {

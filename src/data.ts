@@ -389,6 +389,6 @@ export const PALETTE_FILTERS = [
   "author:",
   "year:2017",
   "tag:RL",
-  "collection:Thesis",
+  "venue:NeurIPS",
   "in:abstract",
 ];

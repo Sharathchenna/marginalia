@@ -51,7 +51,9 @@ ok("retrieveForChat respects k", m.retrieveForChat(m.PAPERS, "learning model net
 
 // --- citations (Phase 5) ---
 const bib = m.toBibTeX(m.PAPERS[0]);
-ok("BibTeX has @inproceedings + title", bib.includes("@inproceedings") && bib.includes("Attention Is All You Need"));
+// entry type is inferred from metadata (arXiv preprint → @misc, journal/DOI →
+// @article, else @inproceedings); just assert a valid typed entry + title.
+ok("BibTeX has a typed entry + title", /^@(misc|article|inproceedings)\{/.test(bib) && bib.includes("Attention Is All You Need"));
 const roundTrip = m.parseBibliography(bib);
 ok("BibTeX round-trips title", roundTrip[0]?.title === "Attention Is All You Need");
 ok("BibTeX round-trips year", roundTrip[0]?.year === 2017);

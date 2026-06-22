@@ -21,10 +21,13 @@ import {
 } from "./lib/library";
 import type { ScannedPdf } from "./lib/library";
 import { lookupIdentifier } from "./lib/metadata";
-import { autoTag as agentAutoTag, extractMetadata, summarizePaper, setAgentModel } from "./lib/agent";
-import type { AutoTagResult } from "./lib/agent";
+import { assessLibrary, autoTag as agentAutoTag, extractMetadata, summarizePaper, setAgentModel } from "./lib/agent";
+import type { AssessResult, AssessTask, AutoTagResult } from "./lib/agent";
 import { exportLibrary as exportLibraryMd, exportPaper as exportPaperMd } from "./lib/markdown";
-import { parseBibliography } from "./lib/citation";
+import { exportLibrary as exportBibLibrary, parseBibliography } from "./lib/citation";
+import { checkRetraction } from "./lib/retraction";
+import { findDuplicates, mergePapers, type DuplicateGroup } from "./lib/dedupe";
+import { hitToPaper, recommendFromLibrary, type DiscoverHit } from "./lib/discover";
 import { retrieveForChat, searchPapers } from "./lib/search";
 import {
   buildEmbedText,
@@ -38,6 +41,55 @@ import {
 // Native window-material the current platform supports (computed once).
 const GLASS_PLATFORM = detectGlassPlatform();
 
+export type ToastKind = "info" | "success" | "error";
+
+// Trigger a browser download of an object as pretty-printed JSON.
+function downloadJson(name: string, data: unknown): void {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// How recent counts as "Recently Added" (also drives the recent filter/count).
+const RECENT_MS = 21 * 86400000;
+// addedTs below this is a legacy 0-255 "recency rank" (pre-timestamp seed data),
+// not an epoch-ms timestamp.
+const LEGACY_TS_MAX = 1e11;
+
+// One-time migration: convert legacy rank-based addedTs to real epoch-ms while
+// preserving order, so "date added" sort, the recent filter, and relative-time
+// labels all work. Newest legacy paper lands ~1 day ago; older ones trail back.
+function migrateAddedTs(papers: Paper[]): { papers: Paper[]; changed: boolean } {
+  const ranks = papers.filter((p) => p.addedTs < LEGACY_TS_MAX).map((p) => p.addedTs);
+  if (!ranks.length) return { papers, changed: false };
+  const DAY = 86400000;
+  const maxRank = Math.max(...ranks);
+  const base = Date.now() - DAY;
+  const next = papers.map((p) =>
+    p.addedTs < LEGACY_TS_MAX ? { ...p, addedTs: base - (maxRank - p.addedTs) * DAY } : p,
+  );
+  return { papers: next, changed: true };
+}
+
+type CardState = NonNullable<Paper["cards"]>[number];
+// When highlight `removed` is deleted, shift every card keyed by a higher index
+// down by one (and drop the deleted one) so SRS state stays attached to the
+// right highlight.
+function reindexCards(cards: Record<number, CardState>, removed: number): Record<number, CardState> {
+  const next: Record<number, CardState> = {};
+  for (const [k, v] of Object.entries(cards)) {
+    const i = Number(k);
+    if (i === removed) continue;
+    next[i > removed ? i - 1 : i] = v;
+  }
+  return next;
+}
+
 const SORT_LABEL: Record<SortKey, string> = {
   added: "Date added",
   year: "Year",
@@ -49,6 +101,7 @@ const FILTER_TITLE: Record<string, string> = {
   fav: "Favorites",
   unread: "Unread",
   queue: "Reading Queue",
+  untagged: "Untagged",
 };
 
 // Fill in authors/venue/year from an auto-tag result, but only when the paper is
@@ -136,6 +189,27 @@ export function useStore() {
   const [voyageKey, setVoyageKeyState] = useState("");
   const [embedStatus, setEmbedStatus] = useState<EmbedStatus>({ embedded: 0, model: "", hasKey: false });
   const [indexing, setIndexing] = useState(false);
+  // Keep <library>/library.bib in sync with the library (LaTeX/Overleaf users).
+  const [autoBib, setAutoBibState] = useState(false);
+  // Duplicate-detection modal.
+  const [dupOpen, setDupOpen] = useState(false);
+  // Localhost port the native web-capture listener bound to (0 = web / unbound).
+  const [capturePort, setCapturePort] = useState(0);
+  // "Papers you should read" — Semantic Scholar recommendations from the library.
+  const [recs, setRecs] = useState<DiscoverHit[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recsError, setRecsError] = useState("");
+  // Optional user-hosted WebDAV sync.
+  const [webdavUrl, setWebdavUrlState] = useState("");
+  const [webdavUser, setWebdavUserState] = useState("");
+  const [webdavPass, setWebdavPassState] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  // Claim verification / review screening modal.
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [claimTask, setClaimTask] = useState<AssessTask>("verify");
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimError, setClaimError] = useState("");
+  const [claimResult, setClaimResult] = useState<AssessResult | null>(null);
 
   // ----- transient UI state -----
   const [filter, setFilter] = useState<Filter>("all");
@@ -157,6 +231,7 @@ export function useStore() {
   const [citeOpen, setCiteOpen] = useState(false);
   const [citeStyle, setCiteStyle] = useState<CiteStyle>("APA");
   const [toast, setToast] = useState("");
+  const [toastKind, setToastKind] = useState<ToastKind>("success");
   const [chatOpen, setChatOpen] = useState(false);
   const [chatScope, setChatScope] = useState<"paper" | "library">("paper");
   const [chatSeed, setChatSeed] = useState("");
@@ -175,7 +250,9 @@ export function useStore() {
         r.getSettings(),
       ]);
       if (!alive) return;
-      setPapers(ps);
+      const mig = migrateAddedTs(ps);
+      setPapers(mig.papers);
+      if (mig.changed) void r.replacePapers(mig.papers);
       setCollections(cs);
       setThemeState(st.theme);
       setDensityState(st.density);
@@ -193,7 +270,12 @@ export function useStore() {
       if (typeof st.embedProvider === "string") setEmbedProviderState(st.embedProvider);
       if (typeof st.embedModel === "string") setEmbedModelState(st.embedModel);
       if (typeof st.voyageKey === "string") setVoyageKeyState(st.voyageKey);
+      if (typeof st.autoBib === "boolean") setAutoBibState(st.autoBib);
+      if (typeof st.webdavUrl === "string") setWebdavUrlState(st.webdavUrl);
+      if (typeof st.webdavUser === "string") setWebdavUserState(st.webdavUser);
+      if (typeof st.webdavPass === "string") setWebdavPassState(st.webdavPass);
       void embeddingStatus().then(setEmbedStatus);
+      if (isTauri()) void invoke<number>("capture_port").then(setCapturePort).catch(() => {});
       if (ps.length && !ps.some((p) => p.id === "attention")) {
         setSelectedId(ps[0].id);
         setReaderId(ps[0].id);
@@ -207,35 +289,43 @@ export function useStore() {
     };
   }, [r]);
 
-  // native only: start watching folders and surface new-PDF events
+  const showToast = useCallback((msg: string, kind: ToastKind = "success") => {
+    setToast(msg);
+    setToastKind(kind);
+  }, []);
   useEffect(() => {
-    if (!loaded || !isTauri()) return;
-    let unlisten = () => {};
-    void invoke("start_watch", { folders: watchFolders }).catch(() => {});
-    import("@tauri-apps/api/event").then(({ listen }) =>
-      listen<string>("watch-import", () =>
-        setToast("New PDF detected in a watch folder"),
-      ).then((u) => {
-        unlisten = u;
-      }),
-    );
-    return () => unlisten();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded]);
+    if (!toast) return;
+    // errors linger a little longer so they're actually readable
+    const t = setTimeout(() => setToast(""), toastKind === "error" ? 4000 : 2200);
+    return () => clearTimeout(t);
+  }, [toast, toastKind]);
+
+  // Persistence writes are fire-and-forget for snappy optimistic UI, but a
+  // backend failure (disk full, poisoned mutex, serialization) must not vanish
+  // silently — surface it so the user knows the change may not have saved.
+  const track = useCallback(
+    (p: Promise<unknown> | void, msg = "Couldn't save — your change may not persist") => {
+      void Promise.resolve(p).catch(() => showToast(msg, "error"));
+    },
+    [showToast],
+  );
 
   const persistSettings = useCallback(
     (patch: Partial<Settings>) => {
-      void r.saveSettings(patch);
+      track(r.saveSettings(patch));
     },
-    [r],
+    [r, track],
   );
 
-  const showToast = useCallback((msg: string) => setToast(msg), []);
+  // Mirror the theme to localStorage so the pre-paint <head> script can apply it
+  // before React mounts (no dark-mode flash), even on the native SQLite backend.
   useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(""), 2200);
-    return () => clearTimeout(t);
-  }, [toast]);
+    try {
+      localStorage.setItem("marg.theme", theme);
+    } catch {
+      /* ignore */
+    }
+  }, [theme]);
 
   const closeOverlays = useCallback(() => {
     setPalette(false);
@@ -248,9 +338,10 @@ export function useStore() {
     const effStatus = (p: Paper) => p.status ?? (p.read ? "done" : "unread");
     let list = papers;
     if (filter === "all") list = papers;
-    else if (filter === "recent") list = papers.filter((p) => p.addedTs >= 190);
+    else if (filter === "recent") list = papers.filter((p) => Date.now() - p.addedTs <= RECENT_MS);
     else if (filter === "fav") list = papers.filter((p) => p.fav);
     else if (filter === "unread") list = papers.filter((p) => !p.read);
+    else if (filter === "untagged") list = papers.filter((p) => p.tags.length === 0);
     else if (filter === "queue") list = papers.filter((p) => effStatus(p) !== "done");
     else if (filter.startsWith("tag:")) {
       const t = filter.slice(4);
@@ -285,10 +376,14 @@ export function useStore() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement | null;
+      const inField =
+        !!tgt && (/^(INPUT|TEXTAREA|SELECT)$/.test(tgt.tagName) || tgt.isContentEditable);
+      const anyOverlay = palette || importOpen || idOpen || citeOpen || chatOpen;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalette((p) => !p);
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n" && !inField) {
         e.preventDefault();
         setIdText("");
         setIdError("");
@@ -298,7 +393,8 @@ export function useStore() {
       } else if (
         (e.key === "ArrowDown" || e.key === "ArrowUp") &&
         screen === "library" &&
-        !palette
+        !anyOverlay &&
+        !inField
       ) {
         e.preventDefault();
         moveSel(e.key === "ArrowDown" ? 1 : -1);
@@ -306,15 +402,15 @@ export function useStore() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [screen, palette, moveSel, closeOverlays]);
+  }, [screen, palette, importOpen, idOpen, citeOpen, chatOpen, moveSel, closeOverlays]);
 
   // ----- mutations (write-through to the repo) -----
   const patchPaper = useCallback(
     (id: string, patch: Partial<Paper>) => {
       setPapers((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-      void r.updatePaper(id, patch);
+      track(r.updatePaper(id, patch));
     },
-    [r],
+    [r, track],
   );
   const toggleStar = useCallback(
     (id: string) => {
@@ -327,8 +423,10 @@ export function useStore() {
     (id: string) => {
       const p = papers.find((x) => x.id === id);
       if (p) {
-        patchPaper(id, { read: !p.read });
-        showToast("Toggled read status");
+        const read = !p.read;
+        // keep status in sync so Unread / Reading-Queue never disagree
+        patchPaper(id, { read, status: read ? "done" : "unread" });
+        showToast(read ? "Marked read" : "Marked unread", "info");
       }
     },
     [papers, patchPaper, showToast],
@@ -337,9 +435,38 @@ export function useStore() {
   const addPaper = useCallback(
     (p: Paper) => {
       setPapers((ps) => [p, ...ps.filter((x) => x.id !== p.id)]);
-      void r.addPaper(p);
+      track(r.addPaper(p));
     },
-    [r],
+    [r, track],
+  );
+
+  // Resolve a captured page URL (from the bookmarklet) into a library paper,
+  // reusing the same lookup pipeline as "Add by identifier".
+  const captureUrl = useCallback(
+    async (raw: string) => {
+      const url = (raw || "").trim();
+      if (!url) return;
+      try {
+        const paper = await lookupIdentifier(url);
+        const existing = await r.listPapers();
+        if (existing.some((p) => p.id === paper.id)) {
+          showToast("Already in your library", "info");
+          return;
+        }
+        addPaper(paper);
+        setSelectedId(paper.id);
+        showToast(`Captured “${paper.title.slice(0, 40)}…” ✨`);
+        if (paper.doi && paper.doi !== "—") {
+          void checkRetraction(paper.doi).then((rt) => {
+            patchPaper(paper.id, { retracted: rt ?? null, retractionChecked: Date.now() });
+            if (rt) showToast(`⚠ Captured paper has a ${rt.reason.toLowerCase()} notice`, "error");
+          });
+        }
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : "Couldn't capture that page", "error");
+      }
+    },
+    [r, addPaper, patchPaper, showToast],
   );
 
   // Scan a folder (recursively) for PDFs and add any not already in the library.
@@ -351,6 +478,9 @@ export function useStore() {
       const additions = found
         .filter((f) => !existing.has("file:" + f.rel))
         .map(filePaper);
+      // distinct, ordered creation timestamps so "date added" sort is stable
+      const t0 = Date.now();
+      additions.forEach((a, i) => (a.addedTs = t0 + i));
       for (const p of additions) await r.addPaper(p);
       if (additions.length) {
         setPapers((prev) => {
@@ -374,18 +504,169 @@ export function useStore() {
     }
   }, [loaded, librarySet, libraryLocation, scanInto]);
 
+  // native only: watch folders for new PDFs and import them live into the
+  // library (copy into the library folder + add a paper), not just toast.
+  useEffect(() => {
+    if (!loaded || !isTauri()) return;
+    let alive = true;
+    let unlisten = () => {};
+    void invoke("start_watch", { folders: watchFolders }).catch(() => {});
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<string>("watch-import", (e) => {
+          void (async () => {
+            try {
+              const file = await importPdf(e.payload, libraryLocation);
+              const id = "file:" + file;
+              const current = await r.listPapers();
+              if (current.some((p) => p.id === id)) return; // already imported
+              const title = file.replace(/\.pdf$/i, "");
+              addPaper({
+                id,
+                title,
+                authors: "Unknown",
+                authorsFull: "",
+                year: 0,
+                venue: "Watch import",
+                doi: "—",
+                arxiv: "—",
+                tags: [],
+                read: false,
+                fav: false,
+                added: "just now",
+                addedTs: Date.now(),
+                abstract: "",
+                notes: "",
+                hl: [],
+                file,
+              });
+              showToast(`Imported “${title.slice(0, 36)}” from watch folder`);
+            } catch {
+              showToast("Couldn't import a watched PDF", "error");
+            }
+          })();
+        }),
+      )
+      .then((u) => {
+        // StrictMode runs effect→cleanup→effect; if we already tore down before
+        // listen() resolved, unsubscribe immediately instead of leaking.
+        if (!alive) u();
+        else unlisten = u;
+      });
+    return () => {
+      alive = false;
+      unlisten();
+    };
+  }, [loaded, watchFolders, libraryLocation, addPaper, r, showToast]);
+
   const persistCollections = useCallback(
     (next: Collection[]) => {
       setCollections(next);
-      void r.saveCollections(next);
+      track(r.saveCollections(next));
     },
-    [r],
+    [r, track],
   );
+
+  // Web capture: the native listener emits `capture-url` when the bookmarklet
+  // fires; resolve it into a paper.
+  useEffect(() => {
+    if (!loaded || !isTauri()) return;
+    let alive = true;
+    let unlisten = () => {};
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) => listen<string>("capture-url", (e) => void captureUrl(e.payload)))
+      .then((u) => {
+        if (!alive) u();
+        else unlisten = u;
+      });
+    return () => {
+      alive = false;
+      unlisten();
+    };
+  }, [loaded, captureUrl]);
+
+  // Auto-export library.bib (debounced) whenever the library changes, so an
+  // external LaTeX/Overleaf workflow can point at a file that's always current.
+  const bibTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (!autoBib || !isTauri() || !loaded || !libraryLocation) return;
+    clearTimeout(bibTimer.current);
+    bibTimer.current = setTimeout(() => {
+      const path = `${libraryLocation.replace(/\/+$/, "")}/library.bib`;
+      void invoke("write_text_file", { path, contents: exportBibLibrary(papers, "bibtex") }).catch(
+        () => {},
+      );
+    }, 1200);
+    return () => clearTimeout(bibTimer.current);
+  }, [papers, autoBib, loaded, libraryLocation]);
 
   const pdfPathFor = useCallback(
     (p: Paper): string | undefined =>
       p.file ? `${libraryLocation.replace(/\/+$/, "")}/${p.file}` : undefined,
     [libraryLocation],
+  );
+
+  // Restore a full library from a backup JSON string (used by file import AND
+  // WebDAV pull). Validates shape, downloads a safety backup, then replaces.
+  const restoreFromBackupText = useCallback(
+    (text: string, confirmFirst = true): boolean => {
+      let data: { papers?: unknown; collections?: unknown; settings?: Record<string, unknown> };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        showToast("Couldn't read backup data", "error");
+        return false;
+      }
+      const incoming = data.papers;
+      const valid =
+        Array.isArray(incoming) &&
+        incoming.every((p) => p && typeof p === "object" && typeof (p as Paper).id === "string");
+      if (!valid) {
+        showToast("That isn't a valid Marginalia backup", "error");
+        return false;
+      }
+      const newPapers = incoming as Paper[];
+      if (
+        confirmFirst &&
+        !window.confirm(
+          `Restore ${newPapers.length} paper${newPapers.length === 1 ? "" : "s"}?\n\n` +
+            `This REPLACES your current library. A safety backup of your current library will be downloaded first.`,
+        )
+      )
+        return false;
+      downloadJson("marginalia-backup-before-restore.json", {
+        version: 1,
+        papers,
+        collections,
+        settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
+      });
+      try {
+        setPapers(newPapers);
+        track(r.replacePapers(newPapers), "Couldn't restore library");
+        if (newPapers[0]) setSelectedId(newPapers[0].id);
+        if (Array.isArray(data.collections)) persistCollections(data.collections as Collection[]);
+        if (data.settings) {
+          const st = data.settings as Record<string, unknown>;
+          if (typeof st.theme === "string") setThemeState(st.theme as Theme);
+          if (typeof st.density === "string") setDensityState(st.density as Density);
+          if (typeof st.view === "string") setViewState(st.view as ViewMode);
+          if (typeof st.defaultCite === "string") setDefaultCite(st.defaultCite as CiteStyle);
+          if (typeof st.libraryLocation === "string") setLibraryLocation(st.libraryLocation);
+          if (Array.isArray(st.watchFolders)) setWatchFolders(st.watchFolders as string[]);
+          if (typeof st.glass === "boolean") setGlassState(st.glass);
+          if (typeof st.model === "string") {
+            setModelState(st.model);
+            setAgentModel(st.model);
+          }
+          track(r.saveSettings(st as Partial<Settings>));
+        }
+        return true;
+      } catch {
+        showToast("Restore failed", "error");
+        return false;
+      }
+    },
+    [papers, collections, theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model, persistCollections, r, track, showToast],
   );
 
   const current = papers.find((p) => p.id === selectedId);
@@ -415,6 +696,15 @@ export function useStore() {
     voyageKey,
     embedStatus,
     indexing,
+    autoBib,
+    dupOpen,
+    capturePort,
+    captureUrl,
+    claimOpen,
+    claimTask,
+    claimBusy,
+    claimError,
+    claimResult,
     filter,
     selectedId,
     sel,
@@ -433,6 +723,7 @@ export function useStore() {
     citeOpen,
     citeStyle,
     toast,
+    toastKind,
     chatOpen,
     papers,
     collections,
@@ -446,11 +737,12 @@ export function useStore() {
     showSidebar: sidebar && screen !== "reader",
     counts: {
       all: papers.length,
-      recent: papers.filter((p) => p.addedTs >= 190).length,
+      recent: papers.filter((p) => Date.now() - p.addedTs <= RECENT_MS).length,
       fav: papers.filter((p) => p.fav).length,
       unread: papers.filter((p) => !p.read).length,
       queue: papers.filter((p) => (p.status ?? (p.read ? "done" : "unread")) !== "done").length,
       untagged: papers.filter((p) => p.tags.length === 0).length,
+      retracted: papers.filter((p) => !!p.retracted).length,
     },
 
     // settings actions (persisted)
@@ -498,7 +790,7 @@ export function useStore() {
         setEmbedStatus(await embeddingStatus());
         showToast(`Indexed ${embedded} paper${embedded === 1 ? "" : "s"}${skipped ? ` (${skipped} unchanged)` : ""} ✨`);
       } catch (e) {
-        showToast(e instanceof Error ? e.message : "Indexing failed");
+        showToast(e instanceof Error ? e.message : "Indexing failed", "error");
       } finally {
         setIndexing(false);
       }
@@ -516,11 +808,13 @@ export function useStore() {
       const score = new Map<string, number>();
       for (const list of [lex, sem])
         list.forEach((id, i) => score.set(id, (score.get(id) ?? 0) + 1 / (60 + i)));
+      // resolve ids → papers and drop stale embedded ids BEFORE slicing, so
+      // missing papers don't consume top-k slots and under-fill the context
       return [...score.entries()]
         .sort((a, b) => b[1] - a[1])
-        .slice(0, k)
         .map(([id]) => byId(id))
-        .filter((p): p is Paper => !!p);
+        .filter((p): p is Paper => !!p)
+        .slice(0, k);
     },
     getSimilar: async (id: string, k = 5): Promise<Paper[]> => {
       const hits = await similarPapersCmd(id, k);
@@ -548,13 +842,24 @@ export function useStore() {
       setCiteStyle(c);
       persistSettings({ defaultCite: c });
     },
-    addWatchFolder: (path: string) => {
-      if (watchFolders.includes(path)) return; // no dup keys / double-remove
+    addWatchFolder: (rawPath: string) => {
+      const path = rawPath.trim().replace(/\/+$/, "");
+      if (!path) return;
+      if (watchFolders.includes(path)) {
+        showToast("Already watching that folder", "info");
+        return;
+      }
       const next = [...watchFolders, path];
       setWatchFolders(next);
       persistSettings({ watchFolders: next });
-      if (isTauri()) void invoke("start_watch", { folders: next }).catch(() => {});
-      showToast("Watch folder added");
+      // only claim success once the native watcher actually started
+      if (isTauri()) {
+        void invoke("start_watch", { folders: next })
+          .then(() => showToast("Watch folder added"))
+          .catch(() => showToast("Couldn't watch that folder", "error"));
+      } else {
+        showToast("Watch folder added");
+      }
     },
     removeWatchFolder: (path: string) => {
       const next = watchFolders.filter((w) => w !== path);
@@ -612,7 +917,7 @@ export function useStore() {
             read: false,
             fav: false,
             added: "just now",
-            addedTs: 230,
+            addedTs: Date.now() + n,
             abstract: "",
             notes: "",
             hl: [],
@@ -634,11 +939,19 @@ export function useStore() {
       ),
     toggleSidebar: () => setSidebar((s) => !s),
     pickFilter: (f: Filter) => {
+      setSel([]); // a stale multi-selection from another filter shouldn't carry over
       setFilter(f);
       setScreen("library");
     },
-    goScreen: setScreen,
-    select: setSelectedId,
+    goScreen: (sc: Screen) => {
+      setSel([]);
+      setScreen(sc);
+    },
+    // a plain (non-modifier) selection clears any lingering multi-selection
+    select: (id: string) => {
+      setSel([]);
+      setSelectedId(id);
+    },
     setSel,
     toggleSel: (id: string) =>
       setSel((cur) =>
@@ -648,9 +961,9 @@ export function useStore() {
     bulkRead: () => {
       const ids = sel;
       setPapers((ps) =>
-        ps.map((p) => (ids.includes(p.id) ? { ...p, read: true } : p)),
+        ps.map((p) => (ids.includes(p.id) ? { ...p, read: true, status: "done" } : p)),
       );
-      ids.forEach((id) => void r.updatePaper(id, { read: true }));
+      ids.forEach((id) => track(r.updatePaper(id, { read: true, status: "done" })));
       setSel([]);
       showToast(`${ids.length} papers marked read`);
     },
@@ -685,10 +998,10 @@ export function useStore() {
             p.related?.includes(id) ? { ...p, related: p.related.filter((x) => x !== id) } : p,
           ),
       );
-      void r.deletePaper(id);
+      track(r.deletePaper(id));
       papers.forEach((p) => {
         if (p.id !== id && p.related?.includes(id)) {
-          void r.updatePaper(p.id, { related: p.related.filter((x) => x !== id) });
+          track(r.updatePaper(p.id, { related: p.related.filter((x) => x !== id) }));
         }
       });
       // drop from any collection
@@ -696,13 +1009,13 @@ export function useStore() {
       if (next.some((c, i) => c.ids.length !== collections[i].ids.length)) persistCollections(next);
       setSel((cur) => cur.filter((x) => x !== id));
       // reselect the neighbour in the current view, not an arbitrary paper
-      if (selectedId === id) {
-        const view = filtered.filter((p) => p.id !== id);
-        const idx = filtered.findIndex((p) => p.id === id);
-        const neighbour = view[Math.min(idx, view.length - 1)] ?? view[0];
-        if (neighbour) setSelectedId(neighbour.id);
-      }
-      showToast("Paper deleted");
+      const view = filtered.filter((p) => p.id !== id);
+      const idx = filtered.findIndex((p) => p.id === id);
+      const neighbour = view[Math.min(idx, view.length - 1)] ?? view[0];
+      if (selectedId === id && neighbour) setSelectedId(neighbour.id);
+      // if the deleted paper was open in the reader, follow to its neighbour too
+      if (readerId === id) setReaderId(neighbour ? neighbour.id : "");
+      showToast("Paper deleted", "info");
     },
 
     // ---- related links ----
@@ -737,51 +1050,165 @@ export function useStore() {
       showToast(`Exported ${n} notes`);
     },
 
+    // ---- retraction checks (Crossref / Retraction Watch) ----
+    // Check every DOI-bearing paper and flag retractions. Privacy-preserving:
+    // one DOI per query, nothing else about the library leaves the machine.
+    checkRetractions: async () => {
+      const targets = papers.filter((p) => p.doi && p.doi !== "—");
+      if (!targets.length) {
+        showToast("No papers with a DOI to check");
+        return;
+      }
+      let checked = 0;
+      let found = 0;
+      for (const p of targets) {
+        const r = await checkRetraction(p.doi);
+        checked++;
+        if (r) found++;
+        patchPaper(p.id, { retracted: r ?? null, retractionChecked: Date.now() });
+        if (checked % 5 === 0 && checked < targets.length)
+          showToast(`Checking retractions… ${checked}/${targets.length}`);
+      }
+      showToast(
+        found ? `⚠ ${found} retracted paper${found === 1 ? "" : "s"} flagged` : "No retractions found ✓",
+        found ? "error" : "success",
+      );
+    },
+
+    // ---- BibTeX auto-export (LaTeX / Overleaf) ----
+    setAutoBib: (on: boolean) => {
+      setAutoBibState(on);
+      persistSettings({ autoBib: on });
+      if (on) showToast("library.bib will stay in sync");
+    },
+    exportBibNow: async () => {
+      const bib = exportBibLibrary(papers, "bibtex");
+      if (isTauri() && libraryLocation) {
+        const path = `${libraryLocation.replace(/\/+$/, "")}/library.bib`;
+        try {
+          await invoke("write_text_file", { path, contents: bib });
+          showToast("Wrote library.bib");
+        } catch {
+          showToast("Couldn't write library.bib", "error");
+        }
+      } else {
+        const url = URL.createObjectURL(new Blob([bib], { type: "text/plain" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "library.bib";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    },
+
+    // ---- duplicate detection / merge ----
+    openDuplicates: () => setDupOpen(true),
+    closeDuplicates: () => setDupOpen(false),
+    duplicateGroups: (): DuplicateGroup[] => findDuplicates(papers),
+    // Merge one detected group into its most-complete record; delete the rest and
+    // repoint collection memberships at the survivor.
+    mergeDuplicate: (group: Paper[]) => {
+      if (group.length < 2) return;
+      const { merged, dropIds } = mergePapers(group);
+      const dropSet = new Set(dropIds);
+      setPapers((ps) =>
+        ps
+          .filter((p) => !dropSet.has(p.id))
+          .map((p) =>
+            p.id === merged.id
+              ? merged
+              : p.related?.some((x) => dropSet.has(x))
+                ? { ...p, related: [...new Set(p.related.map((x) => (dropSet.has(x) ? merged.id : x)))].filter((x) => x !== p.id) }
+                : p,
+          ),
+      );
+      track(r.updatePaper(merged.id, merged));
+      dropIds.forEach((id) => track(r.deletePaper(id)));
+      // collections: replace any dropped id with the survivor (dedup per collection)
+      const nextCols = collections.map((c) =>
+        c.ids.some((x) => dropSet.has(x))
+          ? { ...c, ids: [...new Set(c.ids.map((x) => (dropSet.has(x) ? merged.id : x)))] }
+          : c,
+      );
+      if (nextCols.some((c, i) => c.ids.length !== collections[i].ids.length || c.ids.some((x, j) => x !== collections[i].ids[j])))
+        persistCollections(nextCols);
+      if (dropSet.has(selectedId)) setSelectedId(merged.id);
+      if (dropSet.has(readerId)) setReaderId(merged.id);
+      showToast(`Merged ${group.length} papers into one`);
+    },
+
     // ---- full backup (JSON) ----
     exportBackup: () => {
-      const data = {
+      downloadJson("marginalia-backup.json", {
         version: 1,
         papers,
         collections,
         settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
-      };
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
-      );
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "marginalia-backup.json";
-      a.click();
-      URL.revokeObjectURL(url);
+      });
       showToast("Backup downloaded");
     },
     importBackup: (text: string) => {
+      if (restoreFromBackupText(text)) showToast("Library restored");
+    },
+
+    // ---- optional WebDAV sync (user-hosted) ----
+    webdavUrl,
+    webdavUser,
+    webdavPass,
+    syncing,
+    setWebdav: (url: string, user: string, pass: string) => {
+      setWebdavUrlState(url);
+      setWebdavUserState(user);
+      setWebdavPassState(pass);
+      persistSettings({ webdavUrl: url, webdavUser: user, webdavPass: pass });
+    },
+    syncToWebdav: async () => {
+      if (!isTauri() || !webdavUrl) {
+        showToast("Set a WebDAV URL in Settings first", "info");
+        return;
+      }
+      setSyncing(true);
       try {
-        const data = JSON.parse(text);
-        if (Array.isArray(data.papers)) {
-          setPapers(data.papers);
-          void r.replacePapers(data.papers); // replace, not append (no stale rows on reload)
-          if (data.papers[0]) setSelectedId(data.papers[0].id);
+        const snapshot = JSON.stringify({
+          version: 1,
+          papers,
+          collections,
+          settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
+        });
+        await invoke("webdav_upload", {
+          url: webdavUrl,
+          user: webdavUser,
+          pass: webdavPass,
+          contents: snapshot,
+        });
+        showToast("Library pushed to WebDAV ✓");
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : "Sync failed", "error");
+      } finally {
+        setSyncing(false);
+      }
+    },
+    syncFromWebdav: async () => {
+      if (!isTauri() || !webdavUrl) {
+        showToast("Set a WebDAV URL in Settings first", "info");
+        return;
+      }
+      setSyncing(true);
+      try {
+        const text = await invoke<string>("webdav_download", {
+          url: webdavUrl,
+          user: webdavUser,
+          pass: webdavPass,
+        });
+        if (!text.trim()) {
+          showToast("Nothing on the server yet — push first", "info");
+          return;
         }
-        if (Array.isArray(data.collections)) persistCollections(data.collections);
-        if (data.settings) {
-          const st = data.settings;
-          if (st.theme) setThemeState(st.theme);
-          if (st.density) setDensityState(st.density);
-          if (st.view) setViewState(st.view);
-          if (st.defaultCite) setDefaultCite(st.defaultCite);
-          if (st.libraryLocation) setLibraryLocation(st.libraryLocation);
-          if (Array.isArray(st.watchFolders)) setWatchFolders(st.watchFolders);
-          if (typeof st.glass === "boolean") setGlassState(st.glass);
-          if (typeof st.model === "string") {
-            setModelState(st.model);
-            setAgentModel(st.model);
-          }
-          void r.saveSettings(st);
-        }
-        showToast("Library restored");
-      } catch {
-        showToast("Couldn't read backup file");
+        if (restoreFromBackupText(text)) showToast("Library pulled from WebDAV ✓");
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : "Sync failed", "error");
+      } finally {
+        setSyncing(false);
       }
     },
 
@@ -819,7 +1246,10 @@ export function useStore() {
     deleteHighlight: (paperId: string, index: number) => {
       const p = papers.find((x) => x.id === paperId);
       if (!p) return;
-      patchPaper(paperId, { hl: p.hl.filter((_, i) => i !== index) });
+      const patch: Partial<Paper> = { hl: p.hl.filter((_, i) => i !== index) };
+      // keep flashcard SRS state attached to the right highlight after the shift
+      if (p.cards) patch.cards = reindexCards(p.cards, index);
+      patchPaper(paperId, patch);
     },
 
     // ---- collections ----
@@ -888,17 +1318,19 @@ export function useStore() {
               : p,
           ),
       );
-      ids.forEach((id) => void r.deletePaper(id));
+      ids.forEach((id) => track(r.deletePaper(id)));
       papers.forEach((p) => {
         if (!idSet.has(p.id) && p.related?.some((x) => idSet.has(x))) {
-          void r.updatePaper(p.id, { related: p.related.filter((x) => !idSet.has(x)) });
+          track(r.updatePaper(p.id, { related: p.related.filter((x) => !idSet.has(x)) }));
         }
       });
       persistCollections(
         collections.map((c) => ({ ...c, ids: c.ids.filter((x) => !idSet.has(x)) })),
       );
+      // if the open reader paper was among them, drop it
+      if (idSet.has(readerId)) setReaderId(papers.find((p) => !idSet.has(p.id))?.id ?? "");
       setSel([]);
-      showToast(`Deleted ${ids.length} papers`);
+      showToast(`Deleted ${ids.length} papers`, "info");
     },
     bulkAddToCollection: (colId: string) => {
       const ids = sel;
@@ -943,7 +1375,7 @@ export function useStore() {
         patchPaper(id, patch);
         showToast("Metadata extracted ✨");
       } catch (e) {
-        showToast(e instanceof Error ? e.message : "Extraction failed");
+        showToast(e instanceof Error ? e.message : "Extraction failed", "error");
       } finally {
         setAiBusyId(null);
       }
@@ -970,7 +1402,7 @@ export function useStore() {
         if (m.category) persistCollections(fileInCategory(collections, m.category, id));
         showToast(m.category ? `Filed in “${m.category}” ✨` : "Categorised ✨");
       } catch (e) {
-        showToast(e instanceof Error ? e.message : "Tagging failed");
+        showToast(e instanceof Error ? e.message : "Tagging failed", "error");
       } finally {
         setAiBusyId(null);
       }
@@ -1040,7 +1472,7 @@ export function useStore() {
           setAiBusyId(null);
         },
         onError: (msg) => {
-          showToast(msg);
+          showToast(msg, "error");
           setAiBusyId(null);
         },
       });
@@ -1122,6 +1554,13 @@ export function useStore() {
         setIdOpen(false);
         setSelectedId(paper.id);
         showToast(`Added “${paper.title.slice(0, 40)}…”`);
+        // Flag the new paper if it's been retracted (fire-and-forget).
+        if (paper.doi && paper.doi !== "—") {
+          void checkRetraction(paper.doi).then((r) => {
+            patchPaper(paper.id, { retracted: r ?? null, retractionChecked: Date.now() });
+            if (r) showToast(`⚠ This paper has a ${r.reason.toLowerCase()} notice`, "error");
+          });
+        }
       } catch (e) {
         setIdBusy(false);
         setIdError(e instanceof Error ? e.message : "Lookup failed.");
@@ -1139,9 +1578,99 @@ export function useStore() {
         await navigator.clipboard.writeText(text);
         showToast("Citation copied to clipboard");
       } catch {
-        showToast("Copy failed — select and copy manually");
+        showToast("Copy failed — select and copy manually", "error");
       }
       setCiteOpen(false);
+    },
+
+    // ---- recommendations (Semantic Scholar) ----
+    recs,
+    recsLoading,
+    recsError,
+    loadRecommendations: async () => {
+      if (recsLoading) return;
+      const seeds = [...papers]
+        .filter((p) => (p.arxiv && p.arxiv !== "—") || (p.doi && p.doi !== "—"))
+        .sort((a, b) => Number(b.fav) - Number(a.fav) || b.addedTs - a.addedTs)
+        .slice(0, 12);
+      if (!seeds.length) {
+        setRecs([]);
+        setRecsError("Add a paper with an arXiv ID or DOI to get recommendations.");
+        return;
+      }
+      setRecsLoading(true);
+      setRecsError("");
+      try {
+        const hits = await recommendFromLibrary(seeds, 16);
+        const have = new Set(
+          papers.flatMap((p) => [p.id, p.doi, p.arxiv].filter((x) => x && x !== "—")),
+        );
+        const fresh = hits
+          .filter((h) => !have.has(h.doi) && !have.has(h.arxiv) && !have.has(h.id))
+          // drop repository-stub / junk titles S2 occasionally returns ("UvA-DARE (")
+          .filter((h) => h.title && h.title.replace(/[^A-Za-z0-9]/g, "").length >= 8)
+          .slice(0, 8);
+        setRecs(fresh);
+        setRecsError(fresh.length ? "" : "No new recommendations right now — try refreshing.");
+      } catch {
+        setRecsError("Couldn't reach Semantic Scholar (rate-limited?). Try again.");
+      } finally {
+        setRecsLoading(false);
+      }
+    },
+    addDiscovered: (hit: DiscoverHit) => {
+      const p = hitToPaper(hit);
+      if (papers.some((x) => x.id === p.id)) {
+        showToast("Already in your library", "info");
+        return;
+      }
+      addPaper(p);
+      setRecs((rs) => rs.filter((r) => r.id !== hit.id));
+      showToast(`Added “${p.title.slice(0, 40)}…”`);
+    },
+
+    // ---- claim verification / review screening (AI) ----
+    openClaim: (task: AssessTask = "verify") => {
+      setClaimTask(task);
+      setClaimResult(null);
+      setClaimError("");
+      setClaimOpen(true);
+    },
+    closeClaim: () => setClaimOpen(false),
+    setClaimTask: (task: AssessTask) => {
+      setClaimTask(task);
+      setClaimResult(null);
+      setClaimError("");
+    },
+    runAssess: async (statement: string) => {
+      const text = statement.trim();
+      if (!text || claimBusy) return;
+      setClaimBusy(true);
+      setClaimError("");
+      setClaimResult(null);
+      try {
+        // verify: pull the most relevant papers; screen: judge the current view.
+        const pool =
+          claimTask === "verify" ? retrieveForChat(papers, text, 12) : filtered.slice(0, 25);
+        if (!pool.length) {
+          setClaimError("No papers to assess. Add some to your library first.");
+          return;
+        }
+        const ctx = pool.map((p) => ({
+          id: p.id,
+          title: p.title,
+          authors: p.authors,
+          year: p.year,
+          abstract: p.abstract,
+          summary: p.summary,
+        }));
+        const res = await assessLibrary(claimTask, text, ctx);
+        setClaimResult(res);
+      } catch (e) {
+        setClaimError(e instanceof Error ? e.message : "Assessment failed");
+      } finally {
+        setClaimBusy(false);
+      }
     },
 
     chatScope,
@@ -1188,6 +1717,12 @@ export function useStore() {
     },
     closeOverlays,
     showToast,
+    // Open a web URL in the system browser (native) or a new tab (web).
+    openExternal: (url: string) => {
+      if (!/^https?:\/\//i.test(url)) return;
+      if (isTauri()) void invoke("open_url", { url }).catch(() => {});
+      else window.open(url, "_blank", "noopener");
+    },
   };
 }
 

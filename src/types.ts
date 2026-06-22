@@ -43,8 +43,26 @@ export interface Paper {
   fulltext?: string;
   /** Last page viewed in the reader, for resume. */
   lastPage?: number;
+  /** Total page count of the PDF, cached on first open — drives reading progress. */
+  pages?: number;
   /** Per-highlight flashcards review state, keyed by highlight index. */
   cards?: Record<number, { due: number; ease: number; reps: number }>;
+  /** Retraction status (Crossref / Retraction Watch). Present once checked. */
+  retracted?: Retraction | null;
+  /** Epoch-ms of the last retraction check, so we don't re-query every load. */
+  retractionChecked?: number;
+}
+
+/** A retraction/withdrawal notice resolved from Crossref's Retraction Watch data. */
+export interface Retraction {
+  /** Notice kind: "retraction" | "withdrawal" | "removal" | "correction" … */
+  type: string;
+  /** Human label for the notice (e.g. "Retraction"). */
+  reason: string;
+  /** ISO date (or year) of the notice, when known. */
+  date: string;
+  /** Link to the retraction notice (doi.org/…). */
+  url: string;
 }
 
 export interface Collection {
@@ -69,5 +87,7 @@ export type Screen =
   | "settings"
   | "onboarding";
 export type Filter = string; // 'all' | 'recent' | 'fav' | 'unread' | 'tag:X' | collection id
-export type CiteStyle = "APA" | "MLA" | "Chicago" | "BibTeX";
+// Legacy values "APA" | "MLA" | "Chicago" | "BibTeX" remain valid; CSL style ids
+// (e.g. "ieee", "nature", "vancouver") are also accepted by the citation engine.
+export type CiteStyle = "APA" | "MLA" | "Chicago" | "BibTeX" | (string & {});
 export type SortKey = "added" | "year" | "title";

@@ -15,6 +15,20 @@ function safeName(title: string): string {
   );
 }
 
+// Short stable suffix from the paper id so two papers with the same (or
+// same-after-truncation) title don't collide on one filename / wikilink.
+function shortHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return Math.abs(h).toString(36).slice(0, 5).padStart(4, "0");
+}
+
+// Deterministic note filename (without extension) — used for both the file and
+// any [[wikilink]] pointing at it, so links always resolve.
+function noteName(p: Paper): string {
+  return `${safeName(p.title)} ${shortHash(p.id)}`;
+}
+
 export function paperToMarkdown(p: Paper, all: Paper[]): string {
   const fm: string[] = [
     "---",
@@ -55,7 +69,7 @@ export function paperToMarkdown(p: Paper, all: Paper[]): string {
     lines.push("## Related", "");
     for (const id of p.related) {
       const r = all.find((x) => x.id === id);
-      if (r) lines.push(`- [[${safeName(r.title)}]]`);
+      if (r) lines.push(`- [[${noteName(r)}]]`);
     }
     lines.push("");
   }
@@ -78,7 +92,7 @@ const SUBDIR = "Marginalia Notes";
 
 export async function exportPaper(p: Paper, all: Paper[], libDir: string): Promise<string> {
   const md = paperToMarkdown(p, all);
-  const file = `${safeName(p.title)}.md`;
+  const file = `${noteName(p)}.md`;
   if (isTauri() && libDir) {
     const path = `${libDir.replace(/\/+$/, "")}/${SUBDIR}/${file}`;
     await invoke("write_text_file", { path, contents: md });
@@ -91,7 +105,7 @@ export async function exportPaper(p: Paper, all: Paper[], libDir: string): Promi
 export async function exportLibrary(papers: Paper[], libDir: string): Promise<number> {
   if (isTauri() && libDir) {
     for (const p of papers) {
-      const path = `${libDir.replace(/\/+$/, "")}/${SUBDIR}/${safeName(p.title)}.md`;
+      const path = `${libDir.replace(/\/+$/, "")}/${SUBDIR}/${noteName(p)}.md`;
       await invoke("write_text_file", { path, contents: paperToMarkdown(p, papers) });
     }
     return papers.length;

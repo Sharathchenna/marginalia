@@ -4,6 +4,10 @@ import type { Paper } from "../types";
 // scores each paper by weighted field matches (title > tags/authors > abstract)
 // with a prefix-match fallback, and returns matches best-first. This is the
 // in-memory equivalent of the SQLite FTS5 index used by the native backend.
+//
+// Supports field-scoped operators: author:, tag:, venue:, title:, year: (exact,
+// range "2018-2022", or "<=2020"/">=2020"), and in:<field> to restrict the free
+// terms to one field.
 export interface SearchHit {
   paper: Paper;
   score: number;
@@ -22,18 +26,94 @@ function fieldScore(haystack: string, token: string): number {
   return 0;
 }
 
-export function scorePaper(p: Paper, tokens: string[]): number {
+interface FieldTerm {
+  field: string;
+  value: string;
+}
+const KNOWN_FIELDS = new Set(["author", "authors", "year", "tag", "tags", "venue", "title", "in"]);
+
+// Split a raw query into field-scoped terms (author:foo, year:2017, "in:abstract")
+// and plain free tokens. Quoted values ("a b") are kept whole for field terms.
+function parseQuery(raw: string): { free: string[]; fields: FieldTerm[] } {
+  const fields: FieldTerm[] = [];
+  const free: string[] = [];
+  const re = /(\w+):(?:"([^"]*)"|(\S+))|"([^"]+)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw))) {
+    if (m[1]) {
+      const field = m[1].toLowerCase();
+      const value = (m[2] ?? m[3] ?? "").toLowerCase();
+      if (KNOWN_FIELDS.has(field) && value) fields.push({ field, value });
+      else free.push(...tokenize(m[1] + " " + (m[2] ?? m[3] ?? "")));
+    } else {
+      free.push(...tokenize(m[4] ?? m[5] ?? ""));
+    }
+  }
+  return { free: [...new Set(free)], fields };
+}
+
+function fieldText(p: Paper, f: string): string {
+  switch (f) {
+    case "title":
+      return p.title;
+    case "abstract":
+      return p.abstract;
+    case "author":
+    case "authors":
+      return p.authors + " " + p.authorsFull;
+    case "tag":
+    case "tags":
+      return p.tags.join(" ");
+    case "venue":
+      return p.venue;
+    case "notes":
+      return p.notes;
+    case "concepts":
+      return (p.concepts ?? []).join(" ");
+    default:
+      return p.title + " " + p.abstract;
+  }
+}
+
+function matchYear(year: number, v: string): boolean {
+  let m: RegExpMatchArray | null;
+  if ((m = v.match(/^(\d{4})\s*-\s*(\d{4})$/))) return year >= +m[1] && year <= +m[2];
+  if ((m = v.match(/^>=?\s*(\d{4})$/))) return year >= +m[1];
+  if ((m = v.match(/^<=?\s*(\d{4})$/))) return year <= +m[1];
+  if ((m = v.match(/^(\d{4})$/))) return year === +m[1];
+  return false; // unrecognized year filter shouldn't silently match every paper
+}
+
+function matchField(p: Paper, t: FieldTerm): boolean {
+  const v = t.value;
+  switch (t.field) {
+    case "year":
+      return matchYear(p.year, v);
+    case "tag":
+    case "tags":
+      return p.tags.some((x) => x.toLowerCase().includes(v));
+    default:
+      return fieldText(p, t.field).toLowerCase().includes(v);
+  }
+}
+
+export function scorePaper(p: Paper, tokens: string[], inField?: string): number {
   if (!tokens.length) return 0;
   let score = 0;
   for (const t of tokens) {
-    const title = fieldScore(p.title, t) * 5;
-    const tags = fieldScore(p.tags.join(" "), t) * 3;
-    const authors = fieldScore(p.authors + " " + p.authorsFull, t) * 3;
-    const venue = fieldScore(p.venue, t) * 2;
-    const concepts = fieldScore((p.concepts ?? []).join(" "), t) * 3;
-    const abstract = fieldScore(p.abstract, t) * 1;
-    const full = p.fulltext ? fieldScore(p.fulltext, t) * 0.5 : 0;
-    const best = title + tags + authors + venue + concepts + abstract + full;
+    let best: number;
+    if (inField) {
+      best = fieldScore(fieldText(p, inField), t) * 3;
+    } else {
+      const title = fieldScore(p.title, t) * 5;
+      const tags = fieldScore(p.tags.join(" "), t) * 3;
+      const authors = fieldScore(p.authors + " " + p.authorsFull, t) * 3;
+      const venue = fieldScore(p.venue, t) * 2;
+      const concepts = fieldScore((p.concepts ?? []).join(" "), t) * 3;
+      const abstract = fieldScore(p.abstract, t) * 1;
+      const full = p.fulltext ? fieldScore(p.fulltext, t) * 0.5 : 0;
+      best = title + tags + authors + venue + concepts + abstract + full;
+    }
     if (best === 0) return 0; // every token must match somewhere (AND semantics)
     score += best;
   }
@@ -68,7 +148,8 @@ const STOPWORDS = new Set(
 // most relevant papers. Returns [] when nothing matches so the caller can fall
 // back to the current filter. Concepts and cached full text add signal.
 export function retrieveForChat(papers: Paper[], query: string, k = 14): Paper[] {
-  const tokens = [...new Set(tokenize(query))].filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  // length >= 2 keeps short but meaningful tokens like RL / AI / ML.
+  const tokens = [...new Set(tokenize(query))].filter((t) => t.length >= 2 && !STOPWORDS.has(t));
   if (!tokens.length) return [];
   return papers
     .map((p) => {
@@ -91,8 +172,10 @@ export function retrieveForChat(papers: Paper[], query: string, k = 14): Paper[]
 }
 
 export function searchPapers(papers: Paper[], query: string): SearchHit[] {
-  const tokens = tokenize(query);
-  if (!tokens.length) {
+  const { free, fields } = parseQuery(query);
+  const inField = fields.find((f) => f.field === "in")?.value;
+  const constraints = fields.filter((f) => f.field !== "in");
+  if (!free.length && !constraints.length) {
     return papers.map((p) => ({
       paper: p,
       score: 0,
@@ -100,7 +183,12 @@ export function searchPapers(papers: Paper[], query: string): SearchHit[] {
     }));
   }
   return papers
-    .map((p) => ({ paper: p, score: scorePaper(p, tokens), snippet: makeSnippet(p, tokens) }))
+    .filter((p) => constraints.every((c) => matchField(p, c)))
+    .map((p) => ({
+      paper: p,
+      score: free.length ? scorePaper(p, free, inField) : 1,
+      snippet: makeSnippet(p, free),
+    }))
     .filter((h) => h.score > 0)
     .sort((a, b) => b.score - a.score || b.paper.addedTs - a.paper.addedTs);
 }

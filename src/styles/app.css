@@ -2878,3 +2878,236 @@ textarea.editable-input {
     background: var(--bg-window);
   }
 }
+
+/* ============================================================
+   Accessibility & polish (added pass)
+   ============================================================ */
+
+/* Visible keyboard focus for every interactive control. */
+:where(button, a, input, textarea, select, [tabindex], .nav-item, .tag-chip, .stat-card,
+  .seg-pill, .source-chip, .coll-check):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Respect reduced-motion: neutralise entrance/looping animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Command-palette keyboard highlight. */
+.palette-result.active {
+  background: var(--accent-soft);
+}
+
+/* Error toast accent. */
+.toast[data-kind="error"] {
+  border-color: var(--danger);
+}
+
+/* Inline find-in-document bar (reader). */
+.find-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  margin: 0 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  box-shadow: var(--shadow-sm);
+  color: var(--text-3);
+}
+.find-bar input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+/* Chat Stop button. */
+.chat-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stop-square {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+  display: inline-block;
+}
+
+/* Notebook highlights are buttons that jump to the reader. */
+.nb-item-btn {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+}
+.nb-item-btn:hover .nb-quote {
+  color: var(--accent);
+}
+
+/* Keep overlays inside narrow windows. */
+.palette,
+.onboarding-inner {
+  max-width: calc(100vw - 32px);
+}
+
+/* ---- retraction flags (Crossref / Retraction Watch) ---- */
+.retracted-flag {
+  color: var(--danger);
+  font-weight: 700;
+}
+.retraction-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0 2px;
+  padding: 10px 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: 9px;
+}
+.retraction-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+.retraction-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-1);
+}
+.retraction-text a {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ---- duplicate detection modal ---- */
+.dup-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dup-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dup-group-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+}
+.dup-reason {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.dup-count {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.dup-list {
+  display: flex;
+  flex-direction: column;
+}
+.dup-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border-top: 1px solid var(--border);
+}
+.dup-item:first-child {
+  border-top: none;
+}
+.dup-title {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-1);
+}
+.dup-meta {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* ---- references panel (reader) + recommendations (dashboard) ---- */
+.refs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ref-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ref-title {
+  font-size: 12.5px;
+  color: var(--text-1);
+  line-height: 1.4;
+}
+.ref-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ref-id {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* ---- reading progress ---- */
+.progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 100px;
+  background: var(--border-2);
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  border-radius: 100px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.reading-progress {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.progress-label {
+  font-size: 11.5px;
+  color: var(--text-3);
+}

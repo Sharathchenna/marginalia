@@ -58,7 +58,13 @@ pub fn embed(
         return Ok(vec![]);
     }
     let body = json!({ "input": texts, "model": model, "input_type": input_type });
-    let resp = reqwest::blocking::Client::new()
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .user_agent("Marginalia/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
         .post("https://api.voyageai.com/v1/embeddings")
         .bearer_auth(key)
         .json(&body)

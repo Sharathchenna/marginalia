@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Store } from "../store";
 
 interface Card {
@@ -41,19 +41,47 @@ export function Flashcards({ store: s }: { store: Store }) {
     [s.papers],
   );
   // snapshot the due queue at mount so it doesn't reshuffle as we review
-  const [queue] = useState<Card[]>(() => buildQueue(s));
+  const [queue, setQueue] = useState<Card[]>(() => buildQueue(s));
   const [i, setI] = useState(0);
   const [revealed, setRevealed] = useState(false);
 
+  const card = queue[i];
+  const done = i >= queue.length;
+
   const grade = (g: "again" | "good" | "easy") => {
     const c = queue[i];
+    if (!c) return;
     s.reviewCard(c.paperId, c.idx, g);
+    // "Again" → re-show this card a few positions later, this same session
+    if (g === "again") {
+      setQueue((q) => {
+        const nq = q.slice();
+        nq.splice(Math.min(i + 3, nq.length), 0, c);
+        return nq;
+      });
+    }
     setRevealed(false);
     setI((n) => n + 1);
   };
 
-  const card = queue[i];
-  const done = i >= queue.length;
+  // keyboard: Space/Enter reveals, then 1=Again 2=Good 3=Easy
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement | null;
+      if (tgt && /^(INPUT|TEXTAREA|SELECT)$/.test(tgt.tagName)) return;
+      if (done || !card) return;
+      if (!revealed && (e.key === " " || e.key === "Enter")) {
+        e.preventDefault();
+        setRevealed(true);
+      } else if (revealed && (e.key === "1" || e.key === "2" || e.key === "3")) {
+        e.preventDefault();
+        grade(e.key === "1" ? "again" : e.key === "2" ? "good" : "easy");
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealed, done, card, i, queue]);
 
   return (
     <main className="page-scroll">
@@ -91,16 +119,16 @@ export function Flashcards({ store: s }: { store: Store }) {
                 </div>
               ) : (
                 <button className="btn-go fc-reveal" onClick={() => setRevealed(true)}>
-                  Show answer
+                  Show answer <kbd style={{ marginLeft: 6 }}>space</kbd>
                 </button>
               )}
             </div>
 
             {revealed && (
               <div className="fc-grades">
-                <button className="fc-grade again" onClick={() => grade("again")}>Again</button>
-                <button className="fc-grade good" onClick={() => grade("good")}>Good</button>
-                <button className="fc-grade easy" onClick={() => grade("easy")}>Easy</button>
+                <button className="fc-grade again" onClick={() => grade("again")}>Again <kbd>1</kbd></button>
+                <button className="fc-grade good" onClick={() => grade("good")}>Good <kbd>2</kbd></button>
+                <button className="fc-grade easy" onClick={() => grade("easy")}>Easy <kbd>3</kbd></button>
               </div>
             )}
           </>

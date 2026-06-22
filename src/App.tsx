@@ -11,7 +11,7 @@ import { Discover } from "./components/Discover";
 import { Settings } from "./components/Settings";
 import { Onboarding } from "./components/Onboarding";
 import { CommandPalette } from "./components/CommandPalette";
-import { ImportModal, AddByIdModal, CiteModal } from "./components/Modals";
+import { ImportModal, AddByIdModal, CiteModal, DuplicatesModal, ClaimModal } from "./components/Modals";
 import { ChatPanel } from "./components/ChatPanel";
 import { Toast } from "./components/Toast";
 
@@ -47,10 +47,12 @@ export default function App() {
       {s.importOpen && <ImportModal store={s} />}
       {s.idOpen && <AddByIdModal store={s} />}
       {s.citeOpen && <CiteModal store={s} />}
+      {s.dupOpen && <DuplicatesModal store={s} />}
+      {s.claimOpen && <ClaimModal store={s} />}
       {/* In the reader the chat is embedded in the right sidebar (see Reader);
           elsewhere (e.g. "Ask your library") it floats as a drawer. */}
       {s.chatOpen && s.screen !== "reader" && <ChatPanel store={s} />}
-      {s.toast && <Toast message={s.toast} />}
+      {s.toast && <Toast message={s.toast} kind={s.toastKind} />}
     </div>
   );
 }

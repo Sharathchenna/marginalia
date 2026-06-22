@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -19,6 +19,7 @@ import {
   type OutlineNode,
 } from "../lib/pdf";
 import { resolvePdf } from "../lib/library";
+import { extractReferences } from "../lib/references";
 import { invoke, isTauri } from "../lib/tauri";
 import { ChatPanel } from "./ChatPanel";
 import { AnnPanelIcon, ChevronLeftIcon, SearchIcon, StickyIcon } from "../icons";
@@ -52,6 +53,16 @@ interface Selection {
 
 export function Reader({ store: s }: { store: Store }) {
   const rp = s.readerPaper;
+  // Citable references (DOIs / arXiv ids) parsed from the cached full text.
+  const references = useMemo(() => extractReferences(rp?.fulltext ?? ""), [rp?.fulltext]);
+  const inLibrary = (ref: { doi?: string; arxiv?: string }) =>
+    s.papers.some(
+      (p) =>
+        (ref.doi && p.doi === ref.doi) ||
+        (ref.arxiv && p.arxiv === ref.arxiv) ||
+        (ref.doi && p.id === ref.doi) ||
+        (ref.arxiv && p.id === ref.arxiv),
+    );
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [page, setPage] = useState(1);
@@ -70,6 +81,12 @@ export function Reader({ store: s }: { store: Store }) {
   const [rightW, setRightW] = useState(() => readW("marg.rightW", RIGHT_DEFAULT, RIGHT_MIN, RIGHT_MAX));
   const scrollRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  // resume-position restore: don't let the scroll tracker overwrite lastPage
+  // until we've actually scrolled to the saved page.
+  const restoredRef = useRef(false);
+  const wantResume = useRef<number | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findTerm, setFindTerm] = useState("");
 
   // Drag a panel edge to resize; persist the final width.
   const startResize = useCallback(
@@ -160,13 +177,20 @@ export function Reader({ store: s }: { store: Store }) {
       };
     }
     const resume = rp.lastPage;
+    restoredRef.current = false;
+    wantResume.current = null;
     resolvePdf(rp, s.libraryLocation, (file) => s.patchPaper(rp.id, { file }))
       .then((src) => loadPdfSource(src))
       .then(async (doc) => {
         if (!alive) return;
         setPdf(doc);
         setNumPages(doc.numPages);
-        setPage(resume && resume <= doc.numPages ? resume : 1);
+        // Cache the page count so reading progress works everywhere (lists,
+        // dashboard) without re-opening the PDF.
+        if (rp.pages !== doc.numPages) s.patchPaper(rp.id, { pages: doc.numPages });
+        const target = resume && resume <= doc.numPages ? resume : 1;
+        setPage(target);
+        wantResume.current = target;
         setLoading(false);
         const o = await getOutline(doc);
         if (alive) setOutline(o);
@@ -198,6 +222,25 @@ export function Reader({ store: s }: { store: Store }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
+  // restore the saved reading position once the document is ready — continuous
+  // mode needs an explicit scroll (single-page mode just renders `page`).
+  useEffect(() => {
+    if (!pdf || restoredRef.current) return;
+    const target = wantResume.current ?? 1;
+    if (!cont || target <= 1) {
+      restoredRef.current = true;
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      scrollRef.current?.querySelector(`[data-page="${target}"]`)?.scrollIntoView({ block: "start" });
+      // let the programmatic scroll settle before the tracker takes over
+      window.setTimeout(() => {
+        restoredRef.current = true;
+      }, 250);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pdf, cont]);
+
   // persist panel widths
   useEffect(() => {
     try {
@@ -222,6 +265,7 @@ export function Reader({ store: s }: { store: Store }) {
     const onScroll = () => {
       if (sel) setSel(null);
       if (!cont) return;
+      if (!restoredRef.current) return; // don't fight the resume scroll
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         const top = el.getBoundingClientRect().top + 80;
@@ -252,6 +296,11 @@ export function Reader({ store: s }: { store: Store }) {
   // keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setFindOpen(true);
+        return;
+      }
       const tag = (document.activeElement?.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea") return;
       if (e.key === "ArrowRight" || e.key === "PageDown") {
@@ -274,15 +323,16 @@ export function Reader({ store: s }: { store: Store }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [page, goToPage, zoomIn, zoomOut]);
 
-  const doSearch = async () => {
-    if (!pdf) return;
-    const term = window.prompt("Find in document");
-    if (!term) return;
+  const runFind = async (dir: "next" | "prev") => {
+    const term = findTerm.trim();
+    if (!pdf || !term) return;
     setSearching(true);
     try {
-      const found = await searchInPdf(pdf, term, page);
+      const start = dir === "next" ? page + 1 : Math.max(1, page - 1);
+      let found = await searchInPdf(pdf, term, start);
+      if (!found) found = await searchInPdf(pdf, term, 1); // wrap around
       if (found > 0) goToPage(found);
-      else s.showToast(`“${term}” not found`);
+      else s.showToast(`“${term}” not found`, "info");
     } finally {
       setSearching(false);
     }
@@ -365,6 +415,9 @@ export function Reader({ store: s }: { store: Store }) {
               }}
             />
             <span className="page-total">/ {numPages || "—"}</span>
+            {numPages > 0 && (
+              <span className="page-total" style={{ opacity: 0.7 }}>· {Math.round((page / numPages) * 100)}%</span>
+            )}
             <button className="sticky-btn" disabled={page >= numPages} onClick={() => goToPage(page + 1)} title="Next (→)">›</button>
           </div>
           <div className="pager">
@@ -384,7 +437,12 @@ export function Reader({ store: s }: { store: Store }) {
           <button className="ann-toggle" data-active={cont} onClick={() => setCont((c) => !c)} title="Continuous scroll">
             {cont ? "▤" : "▥"}
           </button>
-          <button className="ann-toggle" onClick={doSearch} title="Find in document">
+          <button
+            className="ann-toggle"
+            data-active={findOpen}
+            onClick={() => setFindOpen((o) => !o)}
+            title="Find in document (⌘F)"
+          >
             {searching ? <span className="spinner" /> : <SearchIcon size={14} />}
           </button>
           <div className="hl-palette">
@@ -434,6 +492,29 @@ export function Reader({ store: s }: { store: Store }) {
             <AnnPanelIcon size={14} />
           </button>
         </div>
+
+        {findOpen && (
+          <div className="find-bar">
+            <SearchIcon size={13} />
+            <input
+              autoFocus
+              value={findTerm}
+              placeholder="Find in document…"
+              onChange={(e) => setFindTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  runFind(e.shiftKey ? "prev" : "next");
+                } else if (e.key === "Escape") {
+                  setFindOpen(false);
+                }
+              }}
+            />
+            <button className="sticky-btn" title="Previous match (⇧⏎)" onClick={() => runFind("prev")}>‹</button>
+            <button className="sticky-btn" title="Next match (⏎)" onClick={() => runFind("next")}>›</button>
+            <button className="sticky-btn" title="Close (Esc)" onClick={() => setFindOpen(false)}>×</button>
+          </div>
+        )}
 
         <div className="reading-scroll" data-pdftheme={pdfTheme} ref={scrollRef}>
           {isMarkdown && (
@@ -534,6 +615,16 @@ export function Reader({ store: s }: { store: Store }) {
           <div className="ann-head">
             <span className="title">Annotations</span>
             <span className="count-pill">{rp.hl.length}</span>
+            {(rp.hl.length > 0 || rp.notes.trim()) && (
+              <button
+                className="mini-btn muted"
+                style={{ marginLeft: "auto" }}
+                title="Export highlights & notes to Markdown"
+                onClick={() => s.exportPaperMarkdown(rp.id)}
+              >
+                ↗ Export
+              </button>
+            )}
           </div>
           <div className="ann-scroll">
             {rp.hl.length === 0 && (
@@ -560,6 +651,49 @@ export function Reader({ store: s }: { store: Store }) {
                 </div>
               </div>
             ))}
+
+            {references.length > 0 && (
+              <div style={{ marginTop: 18 }}>
+                <div className="ann-head" style={{ paddingLeft: 0 }}>
+                  <span className="title">References</span>
+                  <span className="count-pill">{references.length}</span>
+                </div>
+                <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "4px 0 8px" }}>
+                  Citations detected in this paper — add them to your library or open them.
+                </p>
+                <div className="refs-list">
+                  {references.map((ref) => (
+                    <div key={ref.key} className="ref-item">
+                      <span className="ref-id">{ref.label}</span>
+                      <div className="ref-actions">
+                        {inLibrary(ref) ? (
+                          <span style={{ fontSize: 11, color: "var(--green)" }}>✓ In library</span>
+                        ) : (
+                          <button
+                            className="mini-btn"
+                            onClick={() => s.captureUrl(ref.arxiv ? `arXiv:${ref.arxiv}` : ref.doi!)}
+                          >
+                            + Add
+                          </button>
+                        )}
+                        <button
+                          className="mini-btn muted"
+                          onClick={() =>
+                            s.openExternal(
+                              ref.arxiv
+                                ? `https://arxiv.org/abs/${ref.arxiv}`
+                                : `https://doi.org/${ref.doi}`,
+                            )
+                          }
+                        >
+                          Open
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </aside>
       ) : null}

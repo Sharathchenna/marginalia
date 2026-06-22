@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Store } from "../store";
 import {
   federatedSearch,
@@ -27,39 +27,52 @@ export function Discover({ store: s }: { store: Store }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ran, setRan] = useState(false);
+  // monotonic request id so a slower earlier query can't overwrite a later one
+  const reqId = useRef(0);
 
   const run = async (q: string) => {
     const term = q.trim();
     if (!term || sources.size === 0) return;
+    const id = ++reqId.current;
     setBusy(true);
     setError("");
     setRan(true);
     try {
-      setResults(await federatedSearch(term, [...sources]));
+      const r = await federatedSearch(term, [...sources]);
+      if (id === reqId.current) setResults(r);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Search failed");
-      setResults([]);
+      if (id === reqId.current) {
+        setError(e instanceof Error ? e.message : "Search failed");
+        setResults([]);
+      }
     } finally {
-      setBusy(false);
+      if (id === reqId.current) setBusy(false);
     }
   };
 
   const trending = async () => {
+    const id = ++reqId.current;
     setBusy(true);
     setError("");
     setRan(true);
     try {
-      setResults(await trendingHuggingFace());
+      const r = await trendingHuggingFace();
+      if (id === reqId.current) setResults(r);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load trending");
-      setResults([]);
+      if (id === reqId.current) {
+        setError(e instanceof Error ? e.message : "Couldn't load trending");
+        setResults([]);
+      }
     } finally {
-      setBusy(false);
+      if (id === reqId.current) setBusy(false);
     }
   };
 
   useEffect(() => {
-    if (s.discoverSeed) run(s.discoverSeed);
+    if (s.discoverSeed) {
+      setQuery(s.discoverSeed);
+      run(s.discoverSeed);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.discoverSeed]);
 

@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Marginalia — Build Session · 22 Jun 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&family=Source+Serif+4:opsz,wght@8..60,400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --accent: #4b57d6;
+    --accent-2: #7c84ff;
+    --bg: #0b0b10;
+    --bg-2: #121219;
+    --card: rgba(255, 255, 255, 0.035);
+    --card-brd: rgba(255, 255, 255, 0.09);
+    --text-1: #ececf2;
+    --text-2: #a6a8b6;
+    --text-3: #6f7180;
+    --green: #36c08a;
+    --amber: #e0a23a;
+    --danger: #e05c7e;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Inter", system-ui, sans-serif;
+    background:
+      radial-gradient(1100px 620px at 78% -8%, rgba(124, 132, 255, 0.22), transparent 60%),
+      radial-gradient(900px 540px at 8% 4%, rgba(75, 87, 214, 0.18), transparent 55%),
+      var(--bg);
+    color: var(--text-1);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: 80px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* hero */
+  header.hero { padding: 92px 0 54px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-2);
+    background: rgba(124, 132, 255, 0.1);
+    border: 1px solid rgba(124, 132, 255, 0.28);
+    padding: 6px 13px; border-radius: 100px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); }
+  h1 {
+    font-family: "Source Serif 4", serif;
+    font-size: clamp(40px, 7vw, 74px);
+    line-height: 1.02; font-weight: 600; letter-spacing: -0.02em;
+    margin: 22px 0 18px;
+  }
+  h1 .grad {
+    background: linear-gradient(100deg, var(--accent-2), #c6cbff 55%, #fff);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--text-2); max-width: 680px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+  .chip {
+    font-size: 13px; color: var(--text-2);
+    background: var(--card); border: 1px solid var(--card-brd);
+    padding: 7px 14px; border-radius: 100px;
+  }
+  .chip b { color: var(--text-1); font-weight: 600; }
+
+  /* stats */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 48px 0 8px; }
+  .stat {
+    background: var(--card); border: 1px solid var(--card-brd);
+    border-radius: 16px; padding: 22px 20px; backdrop-filter: blur(8px);
+  }
+  .stat .n {
+    font-family: "Source Serif 4", serif; font-size: 40px; font-weight: 600; letter-spacing: -0.02em;
+    background: linear-gradient(120deg, #fff, var(--accent-2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .stat .l { font-size: 13px; color: var(--text-3); margin-top: 2px; }
+
+  /* sections */
+  section { margin-top: 70px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 26px; }
+  .sec-head h2 { font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-2); }
+  .sec-head .rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--card-brd), transparent); }
+
+  /* arc / timeline */
+  .arc { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .step {
+    position: relative; background: var(--card); border: 1px solid var(--card-brd);
+    border-radius: 16px; padding: 22px; backdrop-filter: blur(8px);
+  }
+  .step .k { font-family: var(--mono); font-size: 12px; color: var(--accent-2); }
+  .step h3 { font-size: 17px; margin: 8px 0 6px; font-weight: 650; }
+  .step p { font-size: 13.5px; color: var(--text-2); }
+
+  /* feature grid */
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .card {
+    background: var(--card); border: 1px solid var(--card-brd);
+    border-radius: 18px; padding: 24px; backdrop-filter: blur(10px);
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  }
+  .card:hover { transform: translateY(-3px); border-color: rgba(124, 132, 255, 0.45); background: rgba(124, 132, 255, 0.05); }
+  .card .top { display: flex; align-items: center; gap: 13px; margin-bottom: 12px; }
+  .badge {
+    width: 38px; height: 38px; flex: none; display: grid; place-items: center;
+    border-radius: 11px; font-size: 19px;
+    background: linear-gradient(140deg, rgba(124, 132, 255, 0.28), rgba(75, 87, 214, 0.12));
+    border: 1px solid rgba(124, 132, 255, 0.3);
+  }
+  .card h3 { font-size: 17.5px; font-weight: 650; letter-spacing: -0.01em; }
+  .card .num { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+  .card p { font-size: 14px; color: var(--text-2); }
+  .files { margin-top: 13px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .files code {
+    font-family: var(--mono); font-size: 11.5px; color: var(--text-2);
+    background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-brd);
+    padding: 3px 8px; border-radius: 7px;
+  }
+
+  /* verification */
+  .checks { display: flex; flex-wrap: wrap; gap: 12px; }
+  .check {
+    display: flex; align-items: center; gap: 11px;
+    background: var(--card); border: 1px solid var(--card-brd);
+    border-radius: 14px; padding: 14px 18px; flex: 1 1 200px;
+  }
+  .check .tick {
+    width: 26px; height: 26px; flex: none; border-radius: 50%;
+    display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #062;
+    background: var(--green); box-shadow: 0 0 16px rgba(54, 192, 138, 0.4);
+  }
+  .check .lab { font-size: 14px; font-weight: 600; }
+  .check .sub { font-size: 12.5px; color: var(--text-3); }
+
+  /* deferred */
+  .deferred { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .def {
+    background: rgba(224, 162, 58, 0.05); border: 1px solid rgba(224, 162, 58, 0.22);
+    border-radius: 14px; padding: 18px 20px;
+  }
+  .def h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .def p { font-size: 13px; color: var(--text-2); }
+  .def .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber); }
+
+  footer { margin-top: 80px; padding-top: 28px; border-top: 1px solid var(--card-brd); color: var(--text-3); font-size: 13px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  footer a { color: var(--accent-2); text-decoration: none; }
+
+  /* entrance animation */
+  .reveal { opacity: 0; transform: translateY(16px); animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .grid .card:nth-child(odd) { animation-delay: 0.04s; }
+
+  @media (max-width: 820px) {
+    .stats, .arc { grid-template-columns: repeat(2, 1fr); }
+    .grid, .deferred { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero reveal">
+    <span class="eyebrow"><span class="dot"></span> Build session · 22 June 2026</span>
+    <h1>I shipped <span class="grad">11 features</span><br />into Marginalia today.</h1>
+    <p class="lede">
+      Explored the codebase, ran a 149-source deep-research pass on what a 2026 reference
+      manager needs, distilled it into a roadmap — then implemented and verified the lot.
+    </p>
+    <div class="meta-row">
+      <span class="chip"><b>Marginalia</b> · local-first paper manager</span>
+      <span class="chip">Tauri · React · TypeScript · Rust</span>
+      <span class="chip">all checks <b>green</b></span>
+    </div>
+  </header>
+
+  <div class="stats reveal">
+    <div class="stat"><div class="n">11</div><div class="l">features built</div></div>
+    <div class="stat"><div class="n">149</div><div class="l">research sources</div></div>
+    <div class="stat"><div class="n">35/35</div><div class="l">tests passing</div></div>
+    <div class="stat"><div class="n">5</div><div class="l">new modules</div></div>
+  </div>
+
+  <section class="reveal">
+    <div class="sec-head"><h2>The arc</h2><span class="rule"></span></div>
+    <div class="arc">
+      <div class="step"><div class="k">01</div><h3>Explore</h3><p>Mapped the Rust backend, the <code>useStore()</code> layer, components, and lib modules with parallel agents.</p></div>
+      <div class="step"><div class="k">02</div><h3>Research</h3><p>Parallel “ultra” deep research, 149 sources, on what reference managers need to win in 2026.</p></div>
+      <div class="step"><div class="k">03</div><h3>Roadmap</h3><p>Turned findings into a prioritized, codebase-grounded build plan — ROI first.</p></div>
+      <div class="step"><div class="k">04</div><h3>Build</h3><p>Implemented 11 features, verifying tsc · build · tests · cargo after every batch.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>What I built</h2><span class="rule"></span></div>
+    <div class="grid">
+
+      <div class="card reveal"><div class="top"><div class="badge">⚠</div><h3>Retraction flags</h3><span class="num">01</span></div>
+        <p>Privacy-preserving DOI checks against Crossref / Retraction Watch — only the DOI is sent. Badges across the list, detail panel and reader; auto-checks new papers.</p>
+        <div class="files"><code>metadata.rs</code><code>lib/retraction.ts</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">📚</div><h3>BibTeX auto-export</h3><span class="num">02</span></div>
+        <p>A debounced watcher keeps <code>library.bib</code> in sync on every change, so LaTeX / Overleaf always points at fresh references.</p>
+        <div class="files"><code>store.ts</code><code>Settings.tsx</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">↗</div><h3>Annotation export</h3><span class="num">03</span></div>
+        <p>One-click highlight &amp; note export to Obsidian-flavoured Markdown — per paper in the reader, or the whole notebook at once.</p>
+        <div class="files"><code>Reader.tsx</code><code>Notebook.tsx</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">⧉</div><h3>Duplicate detection</h3><span class="num">04</span></div>
+        <p>Groups by DOI → arXiv → fuzzy title, then merges into the most-complete record, unioning tags, highlights and collections.</p>
+        <div class="files"><code>lib/dedupe.ts</code><code>DuplicatesModal</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">＂</div><h3>CSL citation engine</h3><span class="num">05</span></div>
+        <p>citeproc-js with 8 bundled journal styles (IEEE, Nature, Harvard, AMA, ACM, APA, MLA, Chicago). Hand-rolled formatter kept as a zero-dep fallback.</p>
+        <div class="files"><code>lib/csl.ts</code><code>styles/csl/</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">＋</div><h3>Web capture</h3><span class="num">06</span></div>
+        <p>A localhost listener (std TCP, no deps) + draggable bookmarklet sends any paper page into the library via the existing lookup pipeline.</p>
+        <div class="files"><code>capture.rs</code><code>Settings.tsx</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">✦</div><h3>Recommendations</h3><span class="num">07</span></div>
+        <p>“Papers you should read” on the dashboard, from the Semantic Scholar Recommendations API seeded by your favourites and recent reads.</p>
+        <div class="files"><code>discover.ts</code><code>Dashboard.tsx</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">🔗</div><h3>Clickable references</h3><span class="num">08</span></div>
+        <p>Parses arXiv ids &amp; DOIs out of the cached full text and lists them in the reader with one-click add-to-library or open.</p>
+        <div class="files"><code>lib/references.ts</code><code>Reader.tsx</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">✓</div><h3>Claim verification</h3><span class="num">09</span></div>
+        <p>A research-assistant AI mode: verify a claim across your library (consensus meter, supports / contradicts) or screen papers for a systematic review.</p>
+        <div class="files"><code>agent.mjs</code><code>agent.ts</code><code>ClaimModal</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">⇅</div><h3>WebDAV sync</h3><span class="num">10</span></div>
+        <p>Optional cross-device sync to <em>your own</em> server — push / pull with a safety backup. No Marginalia server ever touches your data.</p>
+        <div class="files"><code>lib.rs</code><code>Settings.tsx</code></div></div>
+
+      <div class="card reveal"><div class="top"><div class="badge">⚙</div><h3>Shared plumbing</h3><span class="num">11</span></div>
+        <p>New <code>Retraction</code> types, a broadened <code>CiteStyle</code>, an <code>openExternal</code> helper, a shared restore path for import &amp; sync, and fresh CSS.</p>
+        <div class="files"><code>types.ts</code><code>store.ts</code></div></div>
+
+    </div>
+  </section>
+
+  <section class="reveal">
+    <div class="sec-head"><h2>Verified, end to end</h2><span class="rule"></span></div>
+    <div class="checks">
+      <div class="check"><span class="tick">✓</span><div><div class="lab">TypeScript</div><div class="sub">tsc — no errors</div></div></div>
+      <div class="check"><span class="tick">✓</span><div><div class="lab">Production build</div><div class="sub">vite build OK</div></div></div>
+      <div class="check"><span class="tick">✓</span><div><div class="lab">Smoke tests</div><div class="sub">35 / 35 passing</div></div></div>
+      <div class="check"><span class="tick">✓</span><div><div class="lab">Rust backend</div><div class="sub">cargo check clean</div></div></div>
+      <div class="check"><span class="tick">✓</span><div><div class="lab">AI sidecar</div><div class="sub">node --check OK</div></div></div>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <div class="sec-head"><h2>Deferred — honest blockers</h2><span class="rule"></span></div>
+    <div class="deferred">
+      <div class="def"><span class="tag">needs tooling</span><h3>OCR for scanned PDFs</h3><p>No tesseract / poppler installed locally; linked crates would break the build. Needs bundled binaries.</p></div>
+      <div class="def"><span class="tag">staged</span><h3>Full browser extension</h3><p>Shipped the bookmarklet + listener as the first step; the packaged extension with site translators is a separate artifact.</p></div>
+      <div class="def"><span class="tag">separate artifact</span><h3>Word / Google-Docs CWYW</h3><p>Requires an Office Add-in / Docs add-on app — though the new CSL engine is the formatting core it would use.</p></div>
+      <div class="def"><span class="tag">needs a server</span><h3>Group libraries &amp; mobile</h3><p>Multi-user libraries need a sync server; mobile is a separate app. WebDAV sync today is single-user.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Marginalia · build session report · generated 22 June 2026</span>
+    <span>all changes in the working tree — <a href="#">uncommitted</a></span>
+  </footer>
+
+</div>
+</body>
+</html>
