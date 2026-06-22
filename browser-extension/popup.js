@@ -32,6 +32,28 @@ $("savePage").addEventListener("click", async () => {
   }
 });
 
+$("clip").addEventListener("click", async () => {
+  const tab = await activeTab();
+  if (!tab?.id) return;
+  toast("Clipping…", "ok");
+  try {
+    // Inject the extractor libs (sequentially), then run the clipper in the page.
+    await api.tabs.executeScript(tab.id, { file: "vendor/Readability.js" });
+    await api.tabs.executeScript(tab.id, { file: "vendor/turndown.js" });
+    await api.tabs.executeScript(tab.id, { file: "vendor/turndown-plugin-gfm.js" });
+    const res = await api.tabs.executeScript(tab.id, { file: "clip.js" });
+    const data = res && res[0];
+    if (!data || !data.markdown) {
+      toast("Couldn't extract this page's content.", "err");
+      return;
+    }
+    await margClip(data);
+    toast(`Clipped “${(data.title || "page").slice(0, 36)}” → Marginalia ✓`, "ok");
+  } catch (e) {
+    toast(e.message || "Clip failed (try a normal http/https page).", "err");
+  }
+});
+
 $("scan").addEventListener("click", async () => {
   const tab = await activeTab();
   if (!tab?.id) return;

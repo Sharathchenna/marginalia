@@ -6,3 +6,6 @@ dist-ssr
 
 # Rust / Tauri
 src-tauri/target
+
+# web-ext signing output
+web-ext-artifacts/

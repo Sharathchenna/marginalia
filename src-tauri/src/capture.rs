@@ -41,12 +41,10 @@ pub fn start(app: AppHandle) {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
             // Don't let a slow/hung client freeze this single-threaded loop.
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
-            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(3)));
-            let mut buf = [0u8; 16384];
-            let n = stream.read(&mut buf).unwrap_or(0);
-            let req = String::from_utf8_lossy(&buf[..n]);
-            let url = parse_param(&req);
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(5)));
+            let data = read_request(&mut stream);
+            let req = String::from_utf8_lossy(&data);
             // CSRF guard: a side-effecting capture must originate from a top-level
             // navigation (the bookmarklet's window.open → Sec-Fetch-Dest: document)
             // or carry the extension's X-Marginalia header (which a malicious page
@@ -56,13 +54,27 @@ pub fn start(app: AppHandle) {
             let authorized = header(&req, "x-marginalia").is_some()
                 || header(&req, "sec-fetch-dest") == Some("document")
                 || header(&req, "sec-fetch-mode").is_none();
-            let (status, body) = match &url {
-                Some(u) if !u.is_empty() && authorized => {
-                    let _ = app.emit("capture-url", u.clone());
-                    ("200 OK", OK_HTML)
+            let first = req.lines().next().unwrap_or("");
+            let (status, body) = if first.starts_with("POST") && first.contains("/clip") {
+                // Clip a page to Markdown (extension-only — needs X-Marginalia).
+                match (authorized, body_json(&data)) {
+                    (true, Some(payload)) => {
+                        let _ = app.emit("capture-clip", payload);
+                        ("200 OK", OK_HTML)
+                    }
+                    (false, _) => ("403 Forbidden", FORBIDDEN_HTML),
+                    (true, None) => ("400 Bad Request", ERR_HTML),
                 }
-                Some(_) if !authorized => ("403 Forbidden", FORBIDDEN_HTML),
-                _ => ("200 OK", ERR_HTML),
+            } else {
+                // GET /add?u=… — bookmarklet / single-link capture.
+                match parse_param(&req) {
+                    Some(u) if !u.is_empty() && authorized => {
+                        let _ = app.emit("capture-url", u);
+                        ("200 OK", OK_HTML)
+                    }
+                    Some(_) if !authorized => ("403 Forbidden", FORBIDDEN_HTML),
+                    _ => ("200 OK", ERR_HTML),
+                }
             };
             // No Access-Control-Allow-Origin: the bookmarklet navigates (no CORS
             // needed) and the extension reads via host permission (CORS-exempt), so
@@ -77,6 +89,58 @@ pub fn start(app: AppHandle) {
             let _ = stream.flush();
         }
     });
+}
+
+// Read a full HTTP request: headers, plus (for POST) the Content-Length body.
+// Bounded by the socket timeouts and a 4 MB hard cap.
+fn read_request(stream: &mut std::net::TcpStream) -> Vec<u8> {
+    let mut data = Vec::new();
+    let mut tmp = [0u8; 8192];
+    loop {
+        match stream.read(&mut tmp) {
+            Ok(0) => break,
+            Ok(n) => {
+                data.extend_from_slice(&tmp[..n]);
+                if data.len() > 4_000_000 {
+                    break;
+                }
+                if let Some(end) = headers_end(&data) {
+                    let head = String::from_utf8_lossy(&data[..end]);
+                    if !head.starts_with("POST") {
+                        break; // GET/other: no body to wait for
+                    }
+                    if data.len() - (end + 4) >= content_length(&head) {
+                        break; // full body received
+                    }
+                }
+            }
+            Err(_) => break, // timeout or connection error
+        }
+    }
+    data
+}
+
+fn headers_end(data: &[u8]) -> Option<usize> {
+    data.windows(4).position(|w| w == b"\r\n\r\n")
+}
+
+fn content_length(head: &str) -> usize {
+    head.lines()
+        .find_map(|l| {
+            l.split_once(':').and_then(|(k, v)| {
+                k.trim()
+                    .eq_ignore_ascii_case("content-length")
+                    .then(|| v.trim().parse().ok())
+                    .flatten()
+            })
+        })
+        .unwrap_or(0)
+}
+
+// Parse the POST body as JSON (for /clip).
+fn body_json(data: &[u8]) -> Option<serde_json::Value> {
+    let end = headers_end(data)?;
+    serde_json::from_slice(&data[end + 4..]).ok()
 }
 
 // Case-insensitive lookup of a request header value (stops at the blank line

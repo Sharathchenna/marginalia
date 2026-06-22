@@ -147,6 +147,12 @@ fn capture_port() -> u16 {
     capture::port()
 }
 
+/// Save an arbitrary web page as a library item (title + description from the page).
+#[tauri::command]
+fn fetch_webpage(url: String) -> Result<Value, String> {
+    metadata::fetch_webpage(&url)
+}
+
 // ---------- optional sync (user-hosted WebDAV) ----------
 // A privacy-respecting cross-device option: the user points at their own WebDAV
 // server (Nextcloud, Fastmail, a self-hosted box…). We PUT/GET a single snapshot
@@ -674,6 +680,7 @@ pub fn run() {
             lookup_identifier,
             check_retraction,
             capture_port,
+            fetch_webpage,
             webdav_upload,
             webdav_download,
             open_url,

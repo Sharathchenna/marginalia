@@ -469,6 +469,63 @@ export function useStore() {
     [r, addPaper, patchPaper, showToast],
   );
 
+  // Save a page the extension clipped to Markdown (full rendered content) as a
+  // library item that opens in the Markdown reader.
+  const captureClip = useCallback(
+    async (data: {
+      url?: string;
+      title?: string;
+      author?: string;
+      siteName?: string;
+      excerpt?: string;
+      markdown?: string;
+    }) => {
+      const url = (data?.url || "").trim();
+      if (!url) return;
+      const clean = url.split(/[?#]/)[0];
+      const id = "web:" + clean;
+      let host = "Web";
+      try {
+        host = new URL(url).hostname.replace(/^www\./, "");
+      } catch {
+        /* keep default */
+      }
+      const md = data.markdown
+        ? `${data.markdown}\n\n---\n\n[Original ↗](${url})`
+        : `[Open original ↗](${url})`;
+      const title = data.title || host;
+      const existing = await r.listPapers();
+      if (existing.some((p) => p.id === id)) {
+        patchPaper(id, { markdown: md, title, abstract: data.excerpt || "" });
+        setSelectedId(id);
+        showToast(`Updated clip “${title.slice(0, 36)}”`);
+        return;
+      }
+      addPaper({
+        id,
+        title,
+        authors: data.author || data.siteName || host,
+        authorsFull: data.author || "",
+        year: 0,
+        venue: data.siteName || host,
+        doi: "—",
+        arxiv: "—",
+        tags: [],
+        read: false,
+        fav: false,
+        added: "just now",
+        addedTs: Date.now(),
+        abstract: data.excerpt || "",
+        notes: url,
+        hl: [],
+        markdown: md,
+      });
+      setSelectedId(id);
+      showToast(`Clipped “${title.slice(0, 36)}” ✨`);
+    },
+    [r, addPaper, patchPaper, showToast],
+  );
+
   // Scan a folder (recursively) for PDFs and add any not already in the library.
   const scanInto = useCallback(
     async (dir: string): Promise<number> => {
@@ -567,23 +624,35 @@ export function useStore() {
     [r, track],
   );
 
-  // Web capture: the native listener emits `capture-url` when the bookmarklet
-  // fires; resolve it into a paper.
+  // Web capture: the native listener emits `capture-url` (bookmarklet / single
+  // link → resolve to a paper) and `capture-clip` (extension clipped a page to
+  // Markdown → save as a Markdown item).
   useEffect(() => {
     if (!loaded || !isTauri()) return;
     let alive = true;
-    let unlisten = () => {};
-    void import("@tauri-apps/api/event")
-      .then(({ listen }) => listen<string>("capture-url", (e) => void captureUrl(e.payload)))
-      .then((u) => {
-        if (!alive) u();
-        else unlisten = u;
-      });
+    const unlisteners: Array<() => void> = [];
+    void import("@tauri-apps/api/event").then(async ({ listen }) => {
+      const u1 = await listen<string>("capture-url", (e) => void captureUrl(e.payload));
+      const u2 = await listen<{
+        url?: string;
+        title?: string;
+        author?: string;
+        siteName?: string;
+        excerpt?: string;
+        markdown?: string;
+      }>("capture-clip", (e) => void captureClip(e.payload));
+      if (!alive) {
+        u1();
+        u2();
+      } else {
+        unlisteners.push(u1, u2);
+      }
+    });
     return () => {
       alive = false;
-      unlisten();
+      unlisteners.forEach((u) => u());
     };
-  }, [loaded, captureUrl]);
+  }, [loaded, captureUrl, captureClip]);
 
   // Auto-export library.bib (debounced) whenever the library changes, so an
   // external LaTeX/Overleaf workflow can point at a file that's always current.

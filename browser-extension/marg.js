@@ -43,6 +43,19 @@ async function margSend(url) {
   return true;
 }
 
+// POST a clipped page (Markdown + metadata) into Marginalia.
+async function margClip(data) {
+  const port = await margFindPort();
+  if (!port) throw new Error("Marginalia isn't running. Open the desktop app and try again.");
+  const r = await fetch(`http://127.0.0.1:${port}/clip`, {
+    method: "POST",
+    headers: { ...MARG_HEADERS, "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) throw new Error(`Clip failed (${r.status})`);
+  return true;
+}
+
 // Resolve an entry to a directly downloadable PDF URL, or null.
 function margPdfUrl(entry) {
   if (entry.type === "pdf") return entry.url;
