@@ -30,6 +30,13 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["marginalia"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

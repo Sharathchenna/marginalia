@@ -32,10 +32,31 @@ async function margFindPort() {
   return null;
 }
 
+// Launch / focus the desktop app via its marginalia:// deep link (Obsidian-style).
+// Opens an inert background tab so Firefox routes the protocol, then closes it.
+async function margOpenApp() {
+  try {
+    const tab = await api.tabs.create({ url: "marginalia://open", active: false });
+    if (tab && tab.id != null) setTimeout(() => api.tabs.remove(tab.id).catch(() => {}), 1500);
+  } catch {
+    /* ignore */
+  }
+}
+
+// Find the listener; if the app isn't up, try to launch it and retry once.
+async function margEnsurePort() {
+  let port = await margFindPort();
+  if (port) return port;
+  await margOpenApp();
+  await new Promise((r) => setTimeout(r, 1800)); // let the app start + bind
+  port = await margFindPort();
+  return port;
+}
+
 // Send one URL into Marginalia (it resolves metadata + fetches the PDF itself).
 async function margSend(url) {
-  const port = await margFindPort();
-  if (!port) throw new Error("Marginalia isn't running. Open the desktop app and try again.");
+  const port = await margEnsurePort();
+  if (!port) throw new Error("Couldn't reach Marginalia — opening it now, try again in a moment.");
   const r = await fetch(`http://127.0.0.1:${port}/add?u=${encodeURIComponent(url)}`, {
     headers: MARG_HEADERS,
   });
@@ -45,8 +66,8 @@ async function margSend(url) {
 
 // POST a clipped page (Markdown + metadata) into Marginalia.
 async function margClip(data) {
-  const port = await margFindPort();
-  if (!port) throw new Error("Marginalia isn't running. Open the desktop app and try again.");
+  const port = await margEnsurePort();
+  if (!port) throw new Error("Couldn't reach Marginalia — opening it now, try again in a moment.");
   const r = await fetch(`http://127.0.0.1:${port}/clip`, {
     method: "POST",
     headers: { ...MARG_HEADERS, "Content-Type": "application/json" },

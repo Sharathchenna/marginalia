@@ -39,56 +39,61 @@ pub fn start(app: AppHandle) {
         };
         CAPTURE_PORT.store(bound, Ordering::Relaxed);
         for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            // Don't let a slow/hung client freeze this single-threaded loop.
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
-            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(5)));
-            let data = read_request(&mut stream);
-            let req = String::from_utf8_lossy(&data);
-            // CSRF guard: a side-effecting capture must originate from a top-level
-            // navigation (the bookmarklet's window.open → Sec-Fetch-Dest: document)
-            // or carry the extension's X-Marginalia header (which a malicious page
-            // can't send cross-origin without a preflight we never approve). A
-            // drive-by `fetch()` from any site is Sec-Fetch-Dest: empty → rejected.
-            // No Sec-Fetch-* header at all = a non-browser client (curl) → allowed.
-            let authorized = header(&req, "x-marginalia").is_some()
-                || header(&req, "sec-fetch-dest") == Some("document")
-                || header(&req, "sec-fetch-mode").is_none();
-            let first = req.lines().next().unwrap_or("");
-            let (status, body) = if first.starts_with("POST") && first.contains("/clip") {
-                // Clip a page to Markdown (extension-only — needs X-Marginalia).
-                match (authorized, body_json(&data)) {
-                    (true, Some(payload)) => {
-                        let _ = app.emit("capture-clip", payload);
-                        ("200 OK", OK_HTML)
-                    }
-                    (false, _) => ("403 Forbidden", FORBIDDEN_HTML),
-                    (true, None) => ("400 Bad Request", ERR_HTML),
-                }
-            } else {
-                // GET /add?u=… — bookmarklet / single-link capture.
-                match parse_param(&req) {
-                    Some(u) if !u.is_empty() && authorized => {
-                        let _ = app.emit("capture-url", u);
-                        ("200 OK", OK_HTML)
-                    }
-                    Some(_) if !authorized => ("403 Forbidden", FORBIDDEN_HTML),
-                    _ => ("200 OK", ERR_HTML),
-                }
-            };
-            // No Access-Control-Allow-Origin: the bookmarklet navigates (no CORS
-            // needed) and the extension reads via host permission (CORS-exempt), so
-            // we don't hand a wildcard to arbitrary pages.
-            let resp = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\n\
-                 Connection: close\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(resp.as_bytes());
-            let _ = stream.flush();
+            let Ok(stream) = stream else { continue };
+            let app = app.clone();
+            // One thread per connection: a slow/hung client can't block the accept
+            // loop (which would make the app look "not running" to the extension).
+            std::thread::spawn(move || handle_conn(stream, &app));
         }
     });
+}
+
+fn handle_conn(mut stream: std::net::TcpStream, app: &AppHandle) {
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(5)));
+    let data = read_request(&mut stream);
+    let req = String::from_utf8_lossy(&data);
+    // CSRF guard: a side-effecting capture must originate from a top-level
+    // navigation (the bookmarklet's window.open → Sec-Fetch-Dest: document) or
+    // carry the extension's X-Marginalia header (which a malicious page can't send
+    // cross-origin without a preflight we never approve). A drive-by `fetch()` is
+    // Sec-Fetch-Dest: empty → rejected. No Sec-Fetch-* at all = curl → allowed.
+    let authorized = header(&req, "x-marginalia").is_some()
+        || header(&req, "sec-fetch-dest") == Some("document")
+        || header(&req, "sec-fetch-mode").is_none();
+    let first = req.lines().next().unwrap_or("");
+    let (status, body) = if first.starts_with("POST") && first.contains("/clip") {
+        // Clip a page to Markdown (extension-only — needs X-Marginalia).
+        match (authorized, body_json(&data)) {
+            (true, Some(payload)) => {
+                let _ = app.emit("capture-clip", payload);
+                ("200 OK", OK_HTML)
+            }
+            (false, _) => ("403 Forbidden", FORBIDDEN_HTML),
+            (true, None) => ("400 Bad Request", ERR_HTML),
+        }
+    } else {
+        // GET /add?u=… — bookmarklet / single-link capture. (/marg-ping → ERR/200.)
+        match parse_param(&req) {
+            Some(u) if !u.is_empty() && authorized => {
+                let _ = app.emit("capture-url", u);
+                ("200 OK", OK_HTML)
+            }
+            Some(_) if !authorized => ("403 Forbidden", FORBIDDEN_HTML),
+            _ => ("200 OK", ERR_HTML),
+        }
+    };
+    // CSRF is prevented by the Sec-Fetch / X-Marginalia checks above, so a wildcard
+    // origin is safe here — it only governs READING the reply, not the action — and
+    // it avoids any CORS edge case making the extension think we're offline.
+    let resp = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\n\
+         Access-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    let _ = stream.write_all(resp.as_bytes());
+    let _ = stream.flush();
 }
 
 // Read a full HTTP request: headers, plus (for POST) the Content-Length body.

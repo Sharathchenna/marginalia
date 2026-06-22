@@ -609,6 +609,7 @@ fn seed_if_empty(conn: &Connection) -> rusqlite::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -623,6 +624,25 @@ pub fn run() {
             // One-click web capture: a localhost listener a bookmarklet can POST
             // the current page URL to (resolved by the frontend's lookup pipeline).
             capture::start(app.handle().clone());
+
+            // marginalia:// deep link — lets the browser extension launch/focus the
+            // app when it isn't running (Obsidian-style). Opening any marginalia://
+            // URL brings the window to the front; the extension then retries capture.
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |_event| {
+                    if let Some(win) = handle.get_webview_window("main") {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                });
+                // Linux/Windows need runtime registration; macOS uses the bundled
+                // Info.plist scheme. Either failure is non-fatal.
+                let _ = app.deep_link().register_all();
+            }
 
             // Native window translucency. On macOS 26 (Tahoe) the system renders
             // this NSVisualEffect material as Liquid Glass automatically; on older
