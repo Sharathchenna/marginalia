@@ -6,6 +6,8 @@ import type { Store } from "../store";
 import type { Paper, ReadingStatus } from "../types";
 import { MoreIcon, SortIcon, StarIcon } from "../icons";
 import { readingPct } from "../lib/reading";
+import { articleHost, articleUrl, faviconUrl, isArticle } from "../lib/items";
+import { relativeTime } from "../lib/time";
 
 function readDotStyle(p: Paper) {
   return {
@@ -20,6 +22,37 @@ function effStatus(p: Paper): ReadingStatus {
   return p.status ?? (p.read ? "done" : "unread");
 }
 
+// A site favicon with a letter-badge fallback, used in article (bookmark/post) rows.
+function Favicon({ host, size = 14 }: { host: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const url = faviconUrl(host);
+  if (!url || failed)
+    return (
+      <span className="row-favicon row-favicon-fallback" style={{ width: size, height: size, lineHeight: `${size}px` }}>
+        {(host[0] || "·").toUpperCase()}
+      </span>
+    );
+  return (
+    <img
+      className="row-favicon"
+      style={{ width: size, height: size }}
+      src={url}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+// Secondary line for an article: host · reading time (or published date).
+function articleMeta(p: Paper): string {
+  const host = articleHost(p);
+  const tail = p.readingTime
+    ? `${p.readingTime} min read`
+    : relativeTime(p.publishedTs ?? p.addedTs) || "";
+  return [host, tail].filter(Boolean).join(" · ");
+}
+
 export function Library({ store: s }: { store: Store }) {
   const onStar = (e: MouseEvent, id: string) => {
     e.stopPropagation();
@@ -30,14 +63,20 @@ export function Library({ store: s }: { store: Store }) {
     s.toggleRead(id);
   };
   const onRow = (e: MouseEvent, id: string) =>
-    e.metaKey || e.ctrlKey ? s.toggleSel(id) : s.select(id);
+    e.metaKey || e.ctrlKey ? s.toggleSel(id) : s.narrow ? s.openReader(id) : s.select(id);
+
+  // A web-article view (bookmarks / feeds / a single feed) gets article-flavored
+  // empty states and row chrome instead of the paper-centric ones.
+  const webView =
+    ["bookmarks", "feeds", "articles", "archived"].includes(s.filter) ||
+    s.filter.startsWith("feed:");
 
   return (
     <main className="library">
       <section className="list-col">
         <div className="list-header">
           <h2>{s.filterTitle}</h2>
-          <span className="count-pill">{s.filtered.length} paper{s.filtered.length === 1 ? "" : "s"}</span>
+          <span className="count-pill">{s.filtered.length} {s.filterNoun}{s.filtered.length === 1 ? "" : "s"}</span>
           <div className="spacer" />
           {s.sel.length > 0 && (
             <div className="bulk-bar">
@@ -46,8 +85,11 @@ export function Library({ store: s }: { store: Store }) {
               <button
                 className="mini-btn"
                 onClick={() => {
-                  const t = window.prompt("Tag to add to selected papers");
-                  if (t) s.bulkAddTag(t);
+                  void s
+                    .requestPrompt({ title: "Tag selected", placeholder: "Tag name", confirmLabel: "Add tag" })
+                    .then((t) => {
+                      if (t && t.trim()) s.bulkAddTag(t);
+                    });
                 }}
               >
                 Tag…
@@ -55,7 +97,11 @@ export function Library({ store: s }: { store: Store }) {
               <button
                 className="mini-btn"
                 onClick={() => {
-                  if (window.confirm(`Delete ${s.sel.length} papers?`)) s.bulkDelete();
+                  void s
+                    .requestConfirm({ title: `Delete ${s.sel.length} items?`, confirmLabel: "Delete", danger: true })
+                    .then((ok) => {
+                      if (ok) s.bulkDelete();
+                    });
                 }}
               >
                 Delete
@@ -83,11 +129,24 @@ export function Library({ store: s }: { store: Store }) {
           <div className="empty-state">
             <p className="big">Nothing here yet</p>
             <p className="small">
-              Import PDFs or add a paper by DOI / arXiv ID to fill this view.
+              {webView
+                ? "Save pages with the Marginalia browser extension, paste a URL to bookmark it, or subscribe to a blog feed."
+                : "Import PDFs or add a paper by DOI / arXiv ID to fill this view."}
             </p>
             <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-              <button className="btn-primary" onClick={s.importFiles}>Import</button>
-              <button className="btn-ghost" onClick={s.openIdentifier}>Add by ID</button>
+              {webView ? (
+                <>
+                  <button className="btn-primary" onClick={s.openIdentifier}>Bookmark a URL</button>
+                  <button className="btn-ghost" onClick={() => s.goScreen("feeds")}>
+                    Subscribe to feed
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="btn-primary" onClick={s.importFiles}>Import</button>
+                  <button className="btn-ghost" onClick={s.openIdentifier}>Add by ID</button>
+                </>
+              )}
             </div>
           </div>
         ) : s.view === "table" ? (
@@ -117,6 +176,7 @@ export function Library({ store: s }: { store: Store }) {
                     style={readDotStyle(p)}
                     onClick={(e) => onRead(e, p.id)}
                   />
+                  {isArticle(p) && <Favicon host={articleHost(p)} />}
                   <span className="cell-title" style={{ fontWeight: p.read ? 450 : 600 }}>
                     {p.retracted && (
                       <span className="retracted-flag" title={`${p.retracted.reason} notice`}>⚠ </span>
@@ -124,8 +184,14 @@ export function Library({ store: s }: { store: Store }) {
                     {p.title}
                   </span>
                 </div>
-                <span className="cell-authors">{p.authors}</span>
-                <span className="cell-year">{p.year || ""}</span>
+                <span className="cell-authors">{isArticle(p) ? articleHost(p) : p.authors}</span>
+                <span className="cell-year">
+                  {isArticle(p)
+                    ? p.readingTime
+                      ? `${p.readingTime}m`
+                      : relativeTime(p.publishedTs ?? p.addedTs) || ""
+                    : p.year || ""}
+                </span>
                 <div className="cell-tags">
                   {p.tags.slice(0, 2).map((tg) => (
                     <span key={tg} className="mini-tag">{tg}</span>
@@ -152,6 +218,7 @@ export function Library({ store: s }: { store: Store }) {
                     onClick={(e) => onRead(e, p.id)}
                   />
                   <span className="card-title">
+                    {isArticle(p) && <Favicon host={articleHost(p)} size={13} />}
                     {p.retracted && (
                       <span className="retracted-flag" title={`${p.retracted.reason} notice`}>⚠ </span>
                     )}
@@ -165,7 +232,9 @@ export function Library({ store: s }: { store: Store }) {
                     <StarIcon size={14} fill={p.fav ? "var(--star)" : "none"} />
                   </button>
                 </div>
-                <span className="card-meta">{p.authors} · {p.year || "—"}</span>
+                <span className="card-meta">
+                  {isArticle(p) ? articleMeta(p) : `${p.authors} · ${p.year || "—"}`}
+                </span>
                 <span className="card-venue">{p.venue}</span>
                 <div style={{ display: "flex", gap: 5, marginTop: 11, flexWrap: "wrap" }}>
                   {p.tags.slice(0, 2).map((tg) => (
@@ -183,7 +252,9 @@ export function Library({ store: s }: { store: Store }) {
         )}
       </section>
 
-      <DetailPanel store={s} />
+      {/* On narrow viewports a row-tap opens the reader; the side detail panel is
+          desktop-only. */}
+      {!s.narrow && <DetailPanel store={s} />}
     </main>
   );
 }
@@ -286,13 +357,17 @@ function DetailPanel({ store: s }: { store: Store }) {
               className="hero-icon-btn"
               title="Delete paper"
               onClick={() => {
-                if (window.confirm("Delete this paper?")) s.deletePaper(cur.id);
+                void s
+                  .requestConfirm({ title: "Delete this item?", confirmLabel: "Delete", danger: true })
+                  .then((ok) => {
+                    if (ok) s.deletePaper(cur.id);
+                  });
               }}
             >
               <MoreIcon size={15} />
             </button>
           </div>
-          <div className="pdf-chip">PDF</div>
+          <div className="pdf-chip">{isArticle(cur) ? "WEB" : "PDF"}</div>
         </div>
 
         <div className="detail-body">
@@ -357,9 +432,25 @@ function DetailPanel({ store: s }: { store: Store }) {
           )}
 
           <div className="detail-actions">
-            <button className="btn-open" onClick={() => s.openReader(cur.id)}>Open in Reader</button>
+            <button className="btn-open" onClick={() => s.openReader(cur.id)}>
+              {isArticle(cur) ? "Read article" : "Open in Reader"}
+            </button>
             <button className="btn-cite" onClick={s.openChat}>Ask AI</button>
             <button className="btn-cite" onClick={s.openCite}>Cite</button>
+            {isArticle(cur) && articleUrl(cur) && (
+              <button className="btn-cite" onClick={() => s.openExternal(articleUrl(cur))}>
+                Open original ↗
+              </button>
+            )}
+            {isArticle(cur) && (
+              <button
+                className="btn-cite"
+                onClick={() => (cur.archived ? s.unarchiveItem(cur.id) : s.archiveItem(cur.id))}
+                title="Read-later archive: keep it but remove it from the inbox"
+              >
+                {cur.archived ? "Unarchive" : "Archive"}
+              </button>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>

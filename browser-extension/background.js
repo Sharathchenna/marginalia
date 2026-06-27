@@ -8,9 +8,14 @@ api.runtime.onInstalled.addListener(() => {
     contexts: ["link"],
   });
   api.contextMenus.create({
-    id: "marg-save-page",
-    title: "Save this page to Marginalia",
+    id: "marg-bookmark-page",
+    title: "Bookmark this page (full article)",
     contexts: ["page", "selection"],
+  });
+  api.contextMenus.create({
+    id: "marg-subscribe",
+    title: "Subscribe to this blog’s feed",
+    contexts: ["page"],
   });
 });
 
@@ -20,11 +25,30 @@ function flashBadge(ok) {
   setTimeout(() => api.browserAction.setBadgeText({ text: "" }), 1600);
 }
 
+// Clip a tab to Markdown (full text) and save it as a bookmark/article.
+async function clipTab(tabId) {
+  await api.tabs.executeScript(tabId, { file: "vendor/Readability.js" });
+  await api.tabs.executeScript(tabId, { file: "vendor/turndown.js" });
+  await api.tabs.executeScript(tabId, { file: "vendor/turndown-plugin-gfm.js" });
+  const res = await api.tabs.executeScript(tabId, { file: "clip.js" });
+  const data = res && res[0];
+  if (!data || !data.markdown) throw new Error("Couldn't extract this page.");
+  data.kind = "article";
+  await margClip(data);
+}
+
 api.contextMenus.onClicked.addListener(async (info, tab) => {
-  const url = info.menuItemId === "marg-save-link" ? info.linkUrl : info.pageUrl || (tab && tab.url);
-  if (!url) return;
   try {
-    await margSend(url);
+    if (info.menuItemId === "marg-save-link" && info.linkUrl) {
+      await margSend(info.linkUrl);
+    } else if (info.menuItemId === "marg-subscribe") {
+      await margSubscribe(info.pageUrl || (tab && tab.url));
+    } else if (tab && tab.id != null) {
+      // marg-bookmark-page (or selection): full-text clip.
+      await clipTab(tab.id);
+    } else {
+      return;
+    }
     flashBadge(true);
   } catch {
     flashBadge(false);

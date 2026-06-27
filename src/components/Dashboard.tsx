@@ -3,6 +3,7 @@ import type { Store } from "../store";
 import type { ReadingStatus } from "../types";
 import { relativeTime } from "../lib/time";
 import { readingPct } from "../lib/reading";
+import { articleHost, isArticle, itemSource } from "../lib/items";
 
 function effStatus(read: boolean, status?: ReadingStatus): ReadingStatus {
   return status ?? (read ? "done" : "unread");
@@ -19,7 +20,28 @@ export function Dashboard({ store: s }: { store: Store }) {
     for (const p of papers) for (const t of p.tags) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
     const topTags = [...tagFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
     const withNotes = papers.filter((p) => p.notes.trim()).length;
-    return { total: papers.length, highlights, done, reading, recent, topTags, withNotes };
+    const articles = papers.filter(isArticle);
+    const unreadBookmarks = articles
+      .filter((p) => itemSource(p) !== "feed" && !p.read && !p.archived)
+      .sort((a, b) => b.addedTs - a.addedTs)
+      .slice(0, 5);
+    const feedPosts = articles
+      .filter((p) => itemSource(p) === "feed" && !p.read && !p.archived)
+      .sort((a, b) => (b.publishedTs ?? b.addedTs) - (a.publishedTs ?? a.addedTs))
+      .slice(0, 6);
+    const paperCount = papers.length - articles.length;
+    return {
+      total: papers.length,
+      paperCount,
+      highlights,
+      done,
+      reading,
+      recent,
+      topTags,
+      withNotes,
+      unreadBookmarks,
+      feedPosts,
+    };
   }, [s.papers]);
 
   // Load "papers you should read" once when the dashboard first has a library.
@@ -40,15 +62,17 @@ export function Dashboard({ store: s }: { store: Store }) {
     <main className="page-scroll">
       <div className="page-inner" style={{ maxWidth: 860 }}>
         <h1 className="page-title">Your library</h1>
-        <p className="page-sub">{stats.total} papers · {stats.highlights} highlights · {stats.done} read</p>
+        <p className="page-sub">
+          {stats.paperCount} papers · {s.counts.articles} articles · {stats.highlights} highlights
+        </p>
 
         <div className="stat-grid">
-          {card("Papers", stats.total, () => s.pickFilter("all"))}
-          {card("In queue", s.counts.queue, () => s.pickFilter("queue"))}
-          {card("Read", stats.done)}
+          {card("Papers", stats.paperCount, () => s.pickFilter("all"))}
+          {card("Inbox", s.counts.queue, () => s.pickFilter("queue"))}
+          {card("Bookmarks", s.counts.bookmarks, () => s.pickFilter("bookmarks"))}
+          {card("Feed unread", s.counts.feedsUnread, () => s.goScreen("feeds"))}
           {card("Highlights", stats.highlights, () => s.goScreen("flashcards"))}
           {card("Favorites", s.counts.fav, () => s.pickFilter("fav"))}
-          {card("Untagged", s.counts.untagged, () => s.pickFilter("untagged"))}
         </div>
 
         {s.counts.untagged > 0 && (
@@ -146,6 +170,44 @@ export function Dashboard({ store: s }: { store: Store }) {
                   </button>
                 );
               })}
+            </div>
+          </section>
+        )}
+
+        {stats.feedPosts.length > 0 && (
+          <section className="dash-section">
+            <h2 className="dash-h2" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              Latest from your feeds
+              <button className="mini-btn muted" style={{ marginLeft: "auto" }} onClick={() => s.goScreen("feeds")}>
+                Open feeds →
+              </button>
+            </h2>
+            <div className="dash-list">
+              {stats.feedPosts.map((p) => (
+                <button key={p.id} className="dash-item" onClick={() => s.openReader(p.id)}>
+                  <span className="dash-item-title">{p.title}</span>
+                  <span className="dash-item-meta">
+                    {articleHost(p)} · {relativeTime(p.publishedTs ?? p.addedTs) || "recent"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {stats.unreadBookmarks.length > 0 && (
+          <section className="dash-section">
+            <h2 className="dash-h2">Unread bookmarks</h2>
+            <div className="dash-list">
+              {stats.unreadBookmarks.map((p) => (
+                <button key={p.id} className="dash-item" onClick={() => s.openReader(p.id)}>
+                  <span className="dash-item-title">{p.title}</span>
+                  <span className="dash-item-meta">
+                    {articleHost(p)}
+                    {p.readingTime ? ` · ${p.readingTime} min read` : ""}
+                  </span>
+                </button>
+              ))}
             </div>
           </section>
         )}

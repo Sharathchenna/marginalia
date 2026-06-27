@@ -3,6 +3,7 @@ import type {
   CiteStyle,
   Collection,
   Density,
+  Feed,
   Filter,
   Paper,
   Screen,
@@ -11,7 +12,26 @@ import type {
   ViewMode,
 } from "./types";
 import { repo, type Settings } from "./lib/repo";
-import { invoke, isTauri, detectGlassPlatform } from "./lib/tauri";
+import {
+  articleUrl,
+  estimateReadingTime,
+  faviconUrl,
+  isArticle,
+  isBookmark,
+  itemKind,
+  itemSource,
+} from "./lib/items";
+import {
+  entryToArticle,
+  feedsToOPML,
+  fetchFeed,
+  opmlToUrls,
+  parseFeed,
+  resolveFeed,
+  type FeedEntry,
+} from "./lib/feeds";
+import { decryptJson, encryptJson, isEncrypted } from "./lib/crypto";
+import { invoke, isMobilePlatform, isTauri, detectGlassPlatform } from "./lib/tauri";
 import {
   chooseLibraryFolder,
   ensureLocalPdfPath,
@@ -21,7 +41,7 @@ import {
 } from "./lib/library";
 import type { ScannedPdf } from "./lib/library";
 import { lookupIdentifier } from "./lib/metadata";
-import { assessLibrary, autoTag as agentAutoTag, extractMetadata, summarizePaper, setAgentModel } from "./lib/agent";
+import { assessLibrary, autoTag as agentAutoTag, extractMetadata, summarizePaper, setAgentModel, setAgentBackend } from "./lib/agent";
 import type { AssessResult, AssessTask, AutoTagResult } from "./lib/agent";
 import { exportLibrary as exportLibraryMd, exportPaper as exportPaperMd } from "./lib/markdown";
 import { exportLibrary as exportBibLibrary, parseBibliography } from "./lib/citation";
@@ -43,11 +63,27 @@ const GLASS_PLATFORM = detectGlassPlatform();
 
 export type ToastKind = "info" | "success" | "error";
 
+// In-app dialog (replaces window.prompt/confirm, which are no-ops in the Tauri
+// webview). One modal renders either a text prompt or a yes/no confirm.
+export type DialogState =
+  | { kind: "prompt"; title: string; value: string; placeholder?: string; confirmLabel: string }
+  | { kind: "confirm"; title: string; body?: string; confirmLabel: string; danger?: boolean };
+
 // Trigger a browser download of an object as pretty-printed JSON.
 function downloadJson(name: string, data: unknown): void {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
   );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Trigger a browser download of arbitrary text (OPML export, etc.).
+function downloadText(name: string, text: string, type = "text/plain"): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
@@ -76,6 +112,46 @@ function migrateAddedTs(papers: Paper[]): { papers: Paper[]; changed: boolean } 
   return { papers: next, changed: true };
 }
 
+// One-time backfill: stamp `kind` on every record (and, for articles, derive
+// url/readingTime if missing) so the bookmark/blog UI can branch on it without
+// re-inferring on every render. Pure — returns updated papers + a changed flag.
+function migrateKinds(papers: Paper[]): { papers: Paper[]; changed: boolean } {
+  let changed = false;
+  const next = papers.map((p) => {
+    if (p.kind) return p;
+    changed = true;
+    const kind = itemKind(p);
+    const patch: Partial<Paper> = { kind };
+    if (kind === "article") {
+      if (!p.url) {
+        const u = articleUrl(p);
+        if (u) patch.url = u;
+      }
+      if (p.readingTime == null && p.markdown) {
+        const rt = estimateReadingTime(p.markdown);
+        if (rt) patch.readingTime = rt;
+      }
+    }
+    return { ...p, ...patch };
+  });
+  return { papers: next, changed };
+}
+
+// Parse a Pocket export (ril_export.html) — a flat list of <a href time_added tags>
+// links — into bookmark seeds. Pocket exports carry no article body, so these
+// import as link bookmarks (open original / re-clip for full text).
+function parsePocketHtml(html: string): { url: string; title: string; tags: string[]; addedTs: number }[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return Array.from(doc.querySelectorAll("a[href]"))
+    .map((a) => ({
+      url: a.getAttribute("href") || "",
+      title: (a.textContent || "").trim(),
+      tags: (a.getAttribute("tags") || "").split(",").map((t) => t.trim()).filter(Boolean),
+      addedTs: Number(a.getAttribute("time_added") || 0) * 1000 || 0,
+    }))
+    .filter((x) => /^https?:\/\//i.test(x.url));
+}
+
 type CardState = NonNullable<Paper["cards"]>[number];
 // When highlight `removed` is deleted, shift every card keyed by a higher index
 // down by one (and drop the deleted one) so SRS state stays attached to the
@@ -100,8 +176,19 @@ const FILTER_TITLE: Record<string, string> = {
   recent: "Recently Added",
   fav: "Favorites",
   unread: "Unread",
-  queue: "Reading Queue",
+  queue: "Inbox",
   untagged: "Untagged",
+  articles: "All Articles",
+  bookmarks: "Bookmarks",
+  feeds: "Blog Feeds",
+  archived: "Archive",
+};
+// The noun shown next to the count in the list header, per filter.
+const FILTER_NOUN: Record<string, string> = {
+  bookmarks: "bookmark",
+  feeds: "post",
+  articles: "article",
+  archived: "item",
 };
 
 // Fill in authors/venue/year from an auto-tag result, but only when the paper is
@@ -169,6 +256,7 @@ export function useStore() {
   // ----- persisted data -----
   const [papers, setPapers] = useState<Paper[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [feeds, setFeeds] = useState<Feed[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   // ----- settings (persisted) -----
@@ -187,6 +275,10 @@ export function useStore() {
   const [embedProvider, setEmbedProviderState] = useState("off");
   const [embedModel, setEmbedModelState] = useState("voyage-3.5-lite");
   const [voyageKey, setVoyageKeyState] = useState("");
+  // Read aloud (text-to-speech).
+  const [ttsProvider, setTtsProviderState] = useState("edge");
+  const [ttsVoice, setTtsVoiceState] = useState("en-US-AriaNeural");
+  const [ttsRate, setTtsRateState] = useState(1.0);
   const [embedStatus, setEmbedStatus] = useState<EmbedStatus>({ embedded: 0, model: "", hasKey: false });
   const [indexing, setIndexing] = useState(false);
   // Keep <library>/library.bib in sync with the library (LaTeX/Overleaf users).
@@ -203,6 +295,12 @@ export function useStore() {
   const [webdavUrl, setWebdavUrlState] = useState("");
   const [webdavUser, setWebdavUserState] = useState("");
   const [webdavPass, setWebdavPassState] = useState("");
+  const [syncPassphrase, setSyncPassphraseState] = useState("");
+  const [syncAuto, setSyncAutoState] = useState(false);
+  const [lastSyncTs, setLastSyncTs] = useState(0);
+  // Optional self-hosted AI backend (enables AI on iOS/web).
+  const [apiUrl, setApiUrlState] = useState("");
+  const [apiToken, setApiTokenState] = useState("");
   const [syncing, setSyncing] = useState(false);
   // Claim verification / review screening modal.
   const [claimOpen, setClaimOpen] = useState(false);
@@ -232,6 +330,23 @@ export function useStore() {
   const [citeStyle, setCiteStyle] = useState<CiteStyle>("APA");
   const [toast, setToast] = useState("");
   const [toastKind, setToastKind] = useState<ToastKind>("success");
+  const [dialog, setDialog] = useState<DialogState | null>(null);
+  const dialogResolve = useRef<((r: string | boolean | null) => void) | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Responsive layout: switch to the single-column mobile shell on a narrow
+  // viewport (real iOS/Android, or a narrowed desktop window).
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 760,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setNarrow(window.innerWidth < 760);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  // On narrow viewports the sidebar is an off-canvas drawer (this flag), separate
+  // from the desktop inline-sidebar toggle (`sidebar`).
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatScope, setChatScope] = useState<"paper" | "library">("paper");
   const [chatSeed, setChatSeed] = useState("");
@@ -244,16 +359,19 @@ export function useStore() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [ps, cs, st] = await Promise.all([
+      const [ps, cs, fs, st] = await Promise.all([
         r.listPapers(),
         r.listCollections(),
+        r.listFeeds(),
         r.getSettings(),
       ]);
       if (!alive) return;
       const mig = migrateAddedTs(ps);
-      setPapers(mig.papers);
-      if (mig.changed) void r.replacePapers(mig.papers);
+      const mig2 = migrateKinds(mig.papers);
+      setPapers(mig2.papers);
+      if (mig.changed || mig2.changed) void r.replacePapers(mig2.papers);
       setCollections(cs);
+      setFeeds(fs);
       setThemeState(st.theme);
       setDensityState(st.density);
       setViewState(st.view);
@@ -270,10 +388,23 @@ export function useStore() {
       if (typeof st.embedProvider === "string") setEmbedProviderState(st.embedProvider);
       if (typeof st.embedModel === "string") setEmbedModelState(st.embedModel);
       if (typeof st.voyageKey === "string") setVoyageKeyState(st.voyageKey);
+      if (typeof st.ttsProvider === "string") setTtsProviderState(st.ttsProvider);
+      if (typeof st.ttsVoice === "string") setTtsVoiceState(st.ttsVoice);
+      if (typeof st.ttsRate === "number") setTtsRateState(st.ttsRate);
       if (typeof st.autoBib === "boolean") setAutoBibState(st.autoBib);
       if (typeof st.webdavUrl === "string") setWebdavUrlState(st.webdavUrl);
       if (typeof st.webdavUser === "string") setWebdavUserState(st.webdavUser);
       if (typeof st.webdavPass === "string") setWebdavPassState(st.webdavPass);
+      if (typeof st.syncPassphrase === "string") setSyncPassphraseState(st.syncPassphrase);
+      if (typeof st.syncAuto === "boolean") setSyncAutoState(st.syncAuto);
+      if (typeof st.lastSyncTs === "number") setLastSyncTs(st.lastSyncTs);
+      if (typeof st.apiUrl === "string" || typeof st.apiToken === "string") {
+        const u = typeof st.apiUrl === "string" ? st.apiUrl : "";
+        const tk = typeof st.apiToken === "string" ? st.apiToken : "";
+        setApiUrlState(u);
+        setApiTokenState(tk);
+        setAgentBackend(u, tk);
+      }
       void embeddingStatus().then(setEmbedStatus);
       if (isTauri()) void invoke<number>("capture_port").then(setCapturePort).catch(() => {});
       if (ps.length && !ps.some((p) => p.id === "attention")) {
@@ -292,6 +423,43 @@ export function useStore() {
   const showToast = useCallback((msg: string, kind: ToastKind = "success") => {
     setToast(msg);
     setToastKind(kind);
+  }, []);
+
+  // In-app prompt/confirm — return a Promise resolved when the user submits or
+  // cancels the DialogModal. (window.prompt/confirm are no-ops in the webview.)
+  const requestPrompt = useCallback(
+    (opts: { title: string; value?: string; placeholder?: string; confirmLabel?: string }) =>
+      new Promise<string | null>((resolve) => {
+        dialogResolve.current = resolve as (r: string | boolean | null) => void;
+        setDialog({
+          kind: "prompt",
+          title: opts.title,
+          value: opts.value ?? "",
+          placeholder: opts.placeholder,
+          confirmLabel: opts.confirmLabel ?? "OK",
+        });
+      }),
+    [],
+  );
+  const requestConfirm = useCallback(
+    (opts: { title: string; body?: string; confirmLabel?: string; danger?: boolean }) =>
+      new Promise<boolean>((resolve) => {
+        dialogResolve.current = resolve as (r: string | boolean | null) => void;
+        setDialog({
+          kind: "confirm",
+          title: opts.title,
+          body: opts.body,
+          confirmLabel: opts.confirmLabel ?? "OK",
+          danger: opts.danger,
+        });
+      }),
+    [],
+  );
+  const closeDialog = useCallback((result: string | boolean | null) => {
+    const r = dialogResolve.current;
+    dialogResolve.current = null;
+    setDialog(null);
+    if (r) r(result);
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -332,6 +500,7 @@ export function useStore() {
     setImportOpen(false);
     setIdOpen(false);
     setCiteOpen(false);
+    setShortcutsOpen(false);
   }, []);
 
   const filtered = useMemo(() => {
@@ -340,10 +509,20 @@ export function useStore() {
     if (filter === "all") list = papers;
     else if (filter === "recent") list = papers.filter((p) => Date.now() - p.addedTs <= RECENT_MS);
     else if (filter === "fav") list = papers.filter((p) => p.fav);
-    else if (filter === "unread") list = papers.filter((p) => !p.read);
+    else if (filter === "unread") list = papers.filter((p) => !p.read && !p.archived);
     else if (filter === "untagged") list = papers.filter((p) => p.tags.length === 0);
-    else if (filter === "queue") list = papers.filter((p) => effStatus(p) !== "done");
-    else if (filter.startsWith("tag:")) {
+    else if (filter === "queue") list = papers.filter((p) => effStatus(p) !== "done" && !p.archived);
+    // ---- web articles: bookmark manager + blog reader ----
+    else if (filter === "articles") list = papers.filter((p) => isArticle(p) && !p.archived);
+    else if (filter === "bookmarks")
+      list = papers.filter((p) => isArticle(p) && itemSource(p) !== "feed" && !p.archived);
+    else if (filter === "feeds")
+      list = papers.filter((p) => isArticle(p) && itemSource(p) === "feed" && !p.archived);
+    else if (filter === "archived") list = papers.filter((p) => p.archived);
+    else if (filter.startsWith("feed:")) {
+      const id = filter.slice(5);
+      list = papers.filter((p) => p.feedId === id && !p.archived);
+    } else if (filter.startsWith("tag:")) {
       const t = filter.slice(4);
       list = papers.filter((p) => p.tags.includes(t));
     } else {
@@ -358,8 +537,20 @@ export function useStore() {
           : a.title.localeCompare(b.title),
     );
     if (filter === "queue") {
-      // currently-reading first, then to-read
-      sorted.sort((a, b) => (effStatus(a) === "reading" ? 0 : 1) - (effStatus(b) === "reading" ? 0 : 1));
+      // Unified triage inbox: unread first, then newest — across papers, bookmarks
+      // and feed posts alike. (Currently-reading items surface via "Continue reading".)
+      sorted.sort(
+        (a, b) =>
+          (a.read ? 1 : 0) - (b.read ? 1 : 0) || (b.publishedTs ?? b.addedTs) - (a.publishedTs ?? a.addedTs),
+      );
+    }
+    // Feed/blog views read like a river of news: unread first, newest post first.
+    if (filter === "feeds" || filter.startsWith("feed:")) {
+      sorted.sort(
+        (a, b) =>
+          (a.read ? 1 : 0) - (b.read ? 1 : 0) ||
+          (b.publishedTs ?? b.addedTs) - (a.publishedTs ?? a.addedTs),
+      );
     }
     return sorted;
   }, [papers, collections, filter, sortKey]);
@@ -374,12 +565,20 @@ export function useStore() {
     [filtered, selectedId],
   );
 
+  // The item to land on after `id` leaves the current view (archived/deleted):
+  // the next one down, else the previous. Used for one-after-another reading.
+  const neighborInView = (id: string): string | undefined => {
+    const idx = filtered.findIndex((p) => p.id === id);
+    const rest = filtered.filter((p) => p.id !== id);
+    return (rest[Math.min(idx, rest.length - 1)] ?? rest[0])?.id;
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tgt = e.target as HTMLElement | null;
       const inField =
         !!tgt && (/^(INPUT|TEXTAREA|SELECT)$/.test(tgt.tagName) || tgt.isContentEditable);
-      const anyOverlay = palette || importOpen || idOpen || citeOpen || chatOpen;
+      const anyOverlay = palette || importOpen || idOpen || citeOpen || chatOpen || !!dialog;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalette((p) => !p);
@@ -388,21 +587,36 @@ export function useStore() {
         setIdText("");
         setIdError("");
         setIdOpen(true);
+      } else if (e.key === "?" && !inField && !anyOverlay) {
+        e.preventDefault();
+        setShortcutsOpen(true);
       } else if (e.key === "Escape") {
         closeOverlays();
       } else if (
-        (e.key === "ArrowDown" || e.key === "ArrowUp") &&
         screen === "library" &&
         !anyOverlay &&
-        !inField
+        !inField &&
+        (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "j" || e.key === "k")
       ) {
+        // j/k (and arrows) move the selection through the list, Reeder-style.
         e.preventDefault();
-        moveSel(e.key === "ArrowDown" ? 1 : -1);
+        moveSel(e.key === "ArrowDown" || e.key === "j" ? 1 : -1);
+      } else if (
+        screen === "library" &&
+        !anyOverlay &&
+        !inField &&
+        (e.key === "Enter" || e.key === "o") &&
+        selectedId
+      ) {
+        // Enter / o opens the selected item in the reader.
+        e.preventDefault();
+        setReaderId(selectedId);
+        setScreen("reader");
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [screen, palette, importOpen, idOpen, citeOpen, chatOpen, moveSel, closeOverlays]);
+  }, [screen, palette, importOpen, idOpen, citeOpen, chatOpen, moveSel, closeOverlays, selectedId, dialog]);
 
   // ----- mutations (write-through to the repo) -----
   const patchPaper = useCallback(
@@ -425,8 +639,15 @@ export function useStore() {
       if (p) {
         const read = !p.read;
         // keep status in sync so Unread / Reading-Queue never disagree
-        patchPaper(id, { read, status: read ? "done" : "unread" });
-        showToast(read ? "Marked read" : "Marked unread", "info");
+        const patch: Partial<Paper> = { read, status: read ? "done" : "unread" };
+        // Read-later: finishing a bookmark archives it out of the inbox (so the
+        // Bookmarks list only shows what's left to read); un-reading restores it.
+        if (isBookmark(p)) patch.archived = read;
+        patchPaper(id, patch);
+        showToast(
+          read ? (isBookmark(p) ? "Archived ✓" : "Marked read") : "Marked unread",
+          "info",
+        );
       }
     },
     [papers, patchPaper, showToast],
@@ -467,6 +688,205 @@ export function useStore() {
       }
     },
     [r, addPaper, patchPaper, showToast],
+  );
+
+  // Save a page the extension clipped to Markdown (full rendered content) as a
+  // library item that opens in the Markdown reader.
+  const captureClip = useCallback(
+    async (data: {
+      url?: string;
+      title?: string;
+      author?: string;
+      siteName?: string;
+      excerpt?: string;
+      markdown?: string;
+    }) => {
+      const url = (data?.url || "").trim();
+      if (!url) return;
+      const clean = url.split(/[?#]/)[0];
+      const id = "web:" + clean;
+      let host = "Web";
+      try {
+        host = new URL(url).hostname.replace(/^www\./, "");
+      } catch {
+        /* keep default */
+      }
+      const md = data.markdown
+        ? `${data.markdown}\n\n---\n\n[Original ↗](${url})`
+        : `[Open original ↗](${url})`;
+      const title = data.title || host;
+      const readingTime = estimateReadingTime(data.markdown) || undefined;
+      const existing = await r.listPapers();
+      if (existing.some((p) => p.id === id)) {
+        patchPaper(id, {
+          markdown: md,
+          title,
+          abstract: data.excerpt || "",
+          kind: "article",
+          source: "clip",
+          url: clean,
+          readingTime,
+          archived: false,
+        });
+        setSelectedId(id);
+        showToast(`Updated clip “${title.slice(0, 36)}”`);
+        return;
+      }
+      addPaper({
+        id,
+        kind: "article",
+        source: "clip",
+        title,
+        authors: data.author || data.siteName || host,
+        authorsFull: data.author || "",
+        year: 0,
+        venue: data.siteName || host,
+        doi: "—",
+        arxiv: "—",
+        tags: [],
+        read: false,
+        fav: false,
+        added: "just now",
+        addedTs: Date.now(),
+        abstract: data.excerpt || "",
+        notes: url,
+        url: clean,
+        favicon: faviconUrl(host),
+        readingTime,
+        hl: [],
+        markdown: md,
+      });
+      setSelectedId(id);
+      showToast(`Clipped “${title.slice(0, 36)}” ✨`);
+    },
+    [r, addPaper, patchPaper, showToast],
+  );
+
+  // ---- blog reader: RSS ingestion ----
+  // Add a feed's new posts (dedup by id) as `article` items. `firstSync` caps how
+  // far back we import so subscribing to a large archive doesn't flood the library.
+  const ingestEntries = useCallback(
+    async (feed: Feed, entries: FeedEntry[], firstSync: boolean): Promise<number> => {
+      if (!entries.length) return 0;
+      const current = await r.listPapers();
+      const have = new Set(current.map((p) => p.id));
+      const fresh = (firstSync ? entries.slice(0, 30) : entries)
+        .map((e) => entryToArticle(e, feed))
+        .filter((p) => !have.has(p.id));
+      if (!fresh.length) return 0;
+      // distinct, ordered creation timestamps so "date added" sort stays stable
+      const t0 = Date.now();
+      fresh.forEach((p, i) => (p.addedTs = t0 + i));
+      for (const p of fresh) await r.addPaper(p);
+      setPapers((prev) => {
+        const ids = new Set(prev.map((x) => x.id));
+        return [...fresh.filter((p) => !ids.has(p.id)), ...prev];
+      });
+      return fresh.length;
+    },
+    [r],
+  );
+
+  // Poll one feed with a conditional GET and ingest new posts. `update` records the
+  // feed's refreshed cache headers / lastFetched / lastError. Returns posts added.
+  const pollFeed = useCallback(
+    async (feed: Feed, update: (patch: Partial<Feed>) => void): Promise<number> => {
+      try {
+        const res = await fetchFeed(feed.url, feed.etag, feed.lastModified);
+        if (res.status === 304) {
+          update({ lastFetched: Date.now(), lastError: undefined });
+          return 0;
+        }
+        if (res.status >= 400 || !res.body.trim()) throw new Error(`HTTP ${res.status || "error"}`);
+        const parsed = parseFeed(res.body, feed.url);
+        const added = await ingestEntries(feed, parsed.entries, false);
+        update({
+          lastFetched: Date.now(),
+          etag: res.etag,
+          lastModified: res.lastModified,
+          lastError: undefined,
+        });
+        return added;
+      } catch (e) {
+        update({ lastFetched: Date.now(), lastError: e instanceof Error ? e.message : "fetch failed" });
+        return 0;
+      }
+    },
+    [ingestEntries],
+  );
+
+  // Subscribe to a site-or-feed URL: resolve the feed, store it, import its posts.
+  // `silent` (used by bulk OPML import) suppresses navigation + per-feed toasts and
+  // returns the number of posts imported (null on failure).
+  const subscribeFeed = useCallback(
+    async (rawUrl: string, opts?: { silent?: boolean }): Promise<number | null> => {
+      const url = (rawUrl || "").trim();
+      if (!url) return null;
+      if (!opts?.silent) showToast("Subscribing…", "info");
+      try {
+        const { feed, entries } = await resolveFeed(url);
+        setFeeds((prev) => {
+          const exists = prev.some((f) => f.id === feed.id);
+          const next = exists
+            ? prev.map((f) => (f.id === feed.id ? { ...feed, folder: f.folder } : f))
+            : [...prev, feed];
+          track(r.saveFeeds(next));
+          return next;
+        });
+        const added = await ingestEntries(feed, entries, true);
+        if (!opts?.silent) {
+          setFilter("feed:" + feed.id);
+          setScreen("library");
+          showToast(`Subscribed to “${feed.title}” · ${added} post${added === 1 ? "" : "s"} ✨`);
+        }
+        return added;
+      } catch (e) {
+        if (!opts?.silent) showToast(e instanceof Error ? e.message : "Couldn't subscribe to that feed", "error");
+        return null;
+      }
+    },
+    [r, ingestEntries, showToast, track],
+  );
+
+  // Refresh every subscribed feed (manual button + the background interval).
+  const refreshAllFeeds = useCallback(
+    async (silent = false): Promise<number> => {
+      const list = await r.listFeeds();
+      if (!list.length) {
+        if (!silent) showToast("No feeds subscribed yet");
+        return 0;
+      }
+      let total = 0;
+      const patches: Record<string, Partial<Feed>> = {};
+      for (const feed of list) {
+        total += await pollFeed(feed, (patch) => (patches[feed.id] = patch));
+      }
+      setFeeds((prev) => {
+        const next = prev.map((f) => (patches[f.id] ? { ...f, ...patches[f.id] } : f));
+        track(r.saveFeeds(next));
+        return next;
+      });
+      if (!silent) showToast(total ? `${total} new post${total === 1 ? "" : "s"} ✨` : "Feeds up to date");
+      return total;
+    },
+    [r, pollFeed, showToast, track],
+  );
+
+  // Refresh a single feed by id.
+  const refreshFeed = useCallback(
+    async (id: string) => {
+      const feed = (await r.listFeeds()).find((f) => f.id === id);
+      if (!feed) return;
+      const added = await pollFeed(feed, (patch) => {
+        setFeeds((prev) => {
+          const next = prev.map((f) => (f.id === id ? { ...f, ...patch } : f));
+          track(r.saveFeeds(next));
+          return next;
+        });
+      });
+      showToast(added ? `“${feed.title}”: ${added} new post${added === 1 ? "" : "s"}` : `“${feed.title}” up to date`);
+    },
+    [r, pollFeed, showToast, track],
   );
 
   // Scan a folder (recursively) for PDFs and add any not already in the library.
@@ -567,23 +987,55 @@ export function useStore() {
     [r, track],
   );
 
-  // Web capture: the native listener emits `capture-url` when the bookmarklet
-  // fires; resolve it into a paper.
+  const persistFeeds = useCallback(
+    (next: Feed[]) => {
+      setFeeds(next);
+      track(r.saveFeeds(next));
+    },
+    [r, track],
+  );
+
+  // Web capture: the native listener emits `capture-url` (bookmarklet / single
+  // link → resolve to a paper) and `capture-clip` (extension clipped a page to
+  // Markdown → save as a Markdown item).
   useEffect(() => {
     if (!loaded || !isTauri()) return;
     let alive = true;
-    let unlisten = () => {};
-    void import("@tauri-apps/api/event")
-      .then(({ listen }) => listen<string>("capture-url", (e) => void captureUrl(e.payload)))
-      .then((u) => {
-        if (!alive) u();
-        else unlisten = u;
-      });
+    const unlisteners: Array<() => void> = [];
+    void import("@tauri-apps/api/event").then(async ({ listen }) => {
+      const u1 = await listen<string>("capture-url", (e) => void captureUrl(e.payload));
+      const u2 = await listen<{
+        url?: string;
+        title?: string;
+        author?: string;
+        siteName?: string;
+        excerpt?: string;
+        markdown?: string;
+      }>("capture-clip", (e) => void captureClip(e.payload));
+      // The extension's "Subscribe" action POSTs a feed/site URL → capture-feed.
+      const u3 = await listen<string>("capture-feed", (e) => void subscribeFeed(e.payload));
+      if (!alive) {
+        u1();
+        u2();
+        u3();
+      } else {
+        unlisteners.push(u1, u2, u3);
+      }
+    });
     return () => {
       alive = false;
-      unlisten();
+      unlisteners.forEach((u) => u());
     };
-  }, [loaded, captureUrl]);
+  }, [loaded, captureUrl, captureClip, subscribeFeed]);
+
+  // Poll subscribed blog feeds on launch and every 15 minutes (native only — the
+  // browser preview can't fetch arbitrary cross-origin feeds).
+  useEffect(() => {
+    if (!loaded || !isTauri()) return;
+    void refreshAllFeeds(true);
+    const iv = setInterval(() => void refreshAllFeeds(true), 15 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, [loaded, refreshAllFeeds]);
 
   // Auto-export library.bib (debounced) whenever the library changes, so an
   // external LaTeX/Overleaf workflow can point at a file that's always current.
@@ -608,9 +1060,16 @@ export function useStore() {
 
   // Restore a full library from a backup JSON string (used by file import AND
   // WebDAV pull). Validates shape, downloads a safety backup, then replaces.
+  // Restore a parsed backup. Confirmation is handled by callers (via requestConfirm)
+  // since the in-app dialog is async; this just validates + replaces + safety-backs-up.
   const restoreFromBackupText = useCallback(
-    (text: string, confirmFirst = true): boolean => {
-      let data: { papers?: unknown; collections?: unknown; settings?: Record<string, unknown> };
+    (text: string): boolean => {
+      let data: {
+        papers?: unknown;
+        collections?: unknown;
+        feeds?: unknown;
+        settings?: Record<string, unknown>;
+      };
       try {
         data = JSON.parse(text);
       } catch {
@@ -626,18 +1085,11 @@ export function useStore() {
         return false;
       }
       const newPapers = incoming as Paper[];
-      if (
-        confirmFirst &&
-        !window.confirm(
-          `Restore ${newPapers.length} paper${newPapers.length === 1 ? "" : "s"}?\n\n` +
-            `This REPLACES your current library. A safety backup of your current library will be downloaded first.`,
-        )
-      )
-        return false;
       downloadJson("marginalia-backup-before-restore.json", {
         version: 1,
         papers,
         collections,
+        feeds,
         settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
       });
       try {
@@ -645,6 +1097,7 @@ export function useStore() {
         track(r.replacePapers(newPapers), "Couldn't restore library");
         if (newPapers[0]) setSelectedId(newPapers[0].id);
         if (Array.isArray(data.collections)) persistCollections(data.collections as Collection[]);
+        if (Array.isArray(data.feeds)) persistFeeds(data.feeds as Feed[]);
         if (data.settings) {
           const st = data.settings as Record<string, unknown>;
           if (typeof st.theme === "string") setThemeState(st.theme as Theme);
@@ -666,8 +1119,102 @@ export function useStore() {
         return false;
       }
     },
-    [papers, collections, theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model, persistCollections, r, track, showToast],
+    [papers, collections, feeds, theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model, persistCollections, persistFeeds, r, track, showToast],
   );
+
+  // ---- WebDAV sync (push/pull), reusable so auto-sync effects can call them ----
+  const syncPush = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!isTauri() || !webdavUrl) {
+        if (!opts?.silent) showToast("Set a WebDAV URL in Settings first", "info");
+        return;
+      }
+      setSyncing(true);
+      try {
+        const syncedAt = Date.now();
+        const snapshot = JSON.stringify({
+          version: 1,
+          syncedAt,
+          papers,
+          collections,
+          feeds,
+          settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
+        });
+        const contents = syncPassphrase ? await encryptJson(snapshot, syncPassphrase) : snapshot;
+        await invoke("webdav_upload", { url: webdavUrl, user: webdavUser, pass: webdavPass, contents });
+        setLastSyncTs(syncedAt);
+        persistSettings({ lastSyncTs: syncedAt });
+        if (!opts?.silent) showToast(syncPassphrase ? "Library pushed (encrypted) ✓" : "Library pushed to WebDAV ✓");
+      } catch (e) {
+        if (!opts?.silent) showToast(e instanceof Error ? e.message : "Sync failed", "error");
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [webdavUrl, webdavUser, webdavPass, syncPassphrase, papers, collections, feeds, theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model, showToast, persistSettings],
+  );
+
+  const syncPull = useCallback(
+    async (opts?: { silent?: boolean; auto?: boolean }) => {
+      if (!isTauri() || !webdavUrl) {
+        if (!opts?.silent) showToast("Set a WebDAV URL in Settings first", "info");
+        return;
+      }
+      setSyncing(true);
+      try {
+        const text = await invoke<string>("webdav_download", { url: webdavUrl, user: webdavUser, pass: webdavPass });
+        if (!text.trim()) {
+          if (!opts?.silent) showToast("Nothing on the server yet — push first", "info");
+          return;
+        }
+        let plain = text;
+        if (isEncrypted(text)) {
+          if (!syncPassphrase) {
+            if (!opts?.silent) showToast("This library is encrypted — set your sync passphrase first", "error");
+            return;
+          }
+          plain = await decryptJson(text, syncPassphrase);
+        }
+        let serverTs = 0;
+        try {
+          serverTs = Number(JSON.parse(plain).syncedAt) || 0;
+        } catch {
+          /* legacy snapshot without a timestamp */
+        }
+        // Auto-pull guard (LWW): only restore when the server is newer than our
+        // last sync, so a background pull can't clobber with a stale copy.
+        if (opts?.auto && serverTs && serverTs <= lastSyncTs) return;
+        if (restoreFromBackupText(plain)) {
+          if (serverTs) {
+            setLastSyncTs(serverTs);
+            persistSettings({ lastSyncTs: serverTs });
+          }
+          if (!opts?.silent) showToast("Library pulled from WebDAV ✓");
+        }
+      } catch (e) {
+        if (!opts?.silent) showToast(e instanceof Error ? e.message : "Sync failed", "error");
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [webdavUrl, webdavUser, webdavPass, syncPassphrase, lastSyncTs, restoreFromBackupText, showToast, persistSettings],
+  );
+
+  // Auto-sync (opt-in, native): pull once on launch (timestamp-guarded)…
+  useEffect(() => {
+    if (!loaded || !isTauri() || !syncAuto || !webdavUrl) return;
+    void syncPull({ silent: true, auto: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+  // …and push when the app is backgrounded, so edits propagate to other devices.
+  useEffect(() => {
+    if (!isTauri() || !syncAuto || !webdavUrl) return;
+    const onHide = () => {
+      if (document.visibilityState === "hidden") void syncPush({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [syncAuto, webdavUrl, syncPush]);
 
   const current = papers.find((p) => p.id === selectedId);
   const readerPaper = papers.find((p) => p.id === readerId) || current;
@@ -675,13 +1222,24 @@ export function useStore() {
   const filterTitle = (() => {
     if (FILTER_TITLE[filter]) return FILTER_TITLE[filter];
     if (filter.startsWith("tag:")) return "#" + filter.slice(4);
+    if (filter.startsWith("feed:")) {
+      const fid = filter.slice(5);
+      const f = feeds.find((x) => x.id === fid);
+      if (f) return f.title;
+      const post = papers.find((p) => p.feedId === fid);
+      return post ? post.venue : "Feed";
+    }
     const c = collections.find((c) => c.id === filter);
     return c ? c.name : "Papers";
   })();
+  // Noun for the list header count ("12 bookmarks", "8 posts", …).
+  const filterNoun = FILTER_NOUN[filter] ?? (filter.startsWith("feed:") ? "post" : "paper");
 
   return {
     // state
     loaded,
+    narrow,
+    mobile: isMobilePlatform(),
     theme,
     density,
     view,
@@ -694,6 +1252,9 @@ export function useStore() {
     embedProvider,
     embedModel,
     voyageKey,
+    ttsProvider,
+    ttsVoice,
+    ttsRate,
     embedStatus,
     indexing,
     autoBib,
@@ -724,6 +1285,13 @@ export function useStore() {
     citeStyle,
     toast,
     toastKind,
+    dialog,
+    requestPrompt,
+    requestConfirm,
+    closeDialog,
+    shortcutsOpen,
+    openShortcuts: () => setShortcutsOpen(true),
+    closeShortcuts: () => setShortcutsOpen(false),
     chatOpen,
     papers,
     collections,
@@ -733,17 +1301,30 @@ export function useStore() {
     current,
     readerPaper,
     filterTitle,
+    filterNoun,
     sortLabel: SORT_LABEL[sortKey],
     showSidebar: sidebar && screen !== "reader",
     counts: {
       all: papers.length,
       recent: papers.filter((p) => Date.now() - p.addedTs <= RECENT_MS).length,
       fav: papers.filter((p) => p.fav).length,
-      unread: papers.filter((p) => !p.read).length,
-      queue: papers.filter((p) => (p.status ?? (p.read ? "done" : "unread")) !== "done").length,
+      unread: papers.filter((p) => !p.read && !p.archived).length,
+      queue: papers.filter((p) => (p.status ?? (p.read ? "done" : "unread")) !== "done" && !p.archived).length,
       untagged: papers.filter((p) => p.tags.length === 0).length,
       retracted: papers.filter((p) => !!p.retracted).length,
+      // web articles (bookmark manager + blog reader)
+      articles: papers.filter((p) => isArticle(p) && !p.archived).length,
+      bookmarks: papers.filter((p) => isArticle(p) && itemSource(p) !== "feed" && !p.archived).length,
+      feedsUnread: papers.filter((p) => isArticle(p) && itemSource(p) === "feed" && !p.read && !p.archived).length,
+      archived: papers.filter((p) => p.archived).length,
     },
+    // Unread post count per feed id, for the sidebar feed list.
+    feedUnread: (() => {
+      const m: Record<string, number> = {};
+      for (const p of papers)
+        if (p.feedId && !p.read && !p.archived) m[p.feedId] = (m[p.feedId] ?? 0) + 1;
+      return m;
+    })(),
 
     // settings actions (persisted)
     glassSupported: GLASS_PLATFORM !== "off",
@@ -763,6 +1344,18 @@ export function useStore() {
       persistSettings({ voyageKey: k, embedProvider: k ? "voyage" : "off" });
       setEmbedProviderState(k ? "voyage" : "off");
       void embeddingStatus().then(setEmbedStatus);
+    },
+    setTtsProvider: (p: string) => {
+      setTtsProviderState(p);
+      persistSettings({ ttsProvider: p });
+    },
+    setTtsVoice: (v: string) => {
+      setTtsVoiceState(v);
+      persistSettings({ ttsVoice: v });
+    },
+    setTtsRate: (rate: number) => {
+      setTtsRateState(rate);
+      persistSettings({ ttsRate: rate });
     },
     setEmbedModel: (m: string) => {
       setEmbedModelState(m);
@@ -942,11 +1535,16 @@ export function useStore() {
       setSel([]); // a stale multi-selection from another filter shouldn't carry over
       setFilter(f);
       setScreen("library");
+      setDrawerOpen(false);
     },
     goScreen: (sc: Screen) => {
       setSel([]);
       setScreen(sc);
+      setDrawerOpen(false);
     },
+    drawerOpen,
+    toggleDrawer: () => setDrawerOpen((o) => !o),
+    closeDrawer: () => setDrawerOpen(false),
     // a plain (non-modifier) selection clears any lingering multi-selection
     select: (id: string) => {
       setSel([]);
@@ -960,12 +1558,15 @@ export function useStore() {
     clearSel: () => setSel([]),
     bulkRead: () => {
       const ids = sel;
-      setPapers((ps) =>
-        ps.map((p) => (ids.includes(p.id) ? { ...p, read: true, status: "done" } : p)),
-      );
-      ids.forEach((id) => track(r.updatePaper(id, { read: true, status: "done" })));
+      const done = (p: Paper): Partial<Paper> =>
+        isBookmark(p) ? { read: true, status: "done", archived: true } : { read: true, status: "done" };
+      setPapers((ps) => ps.map((p) => (ids.includes(p.id) ? { ...p, ...done(p) } : p)));
+      ids.forEach((id) => {
+        const p = papers.find((x) => x.id === id);
+        if (p) track(r.updatePaper(id, done(p)));
+      });
       setSel([]);
-      showToast(`${ids.length} papers marked read`);
+      showToast(`${ids.length} marked read`);
     },
     toggleStar,
     toggleRead,
@@ -987,8 +1588,33 @@ export function useStore() {
       const p = papers.find((x) => x.id === id);
       if (p) patchPaper(id, { tags: p.tags.filter((t) => t !== tag) });
     },
-    setStatus: (id: string, status: Paper["status"]) =>
-      patchPaper(id, { status, read: status === "done" }),
+    setStatus: (id: string, status: Paper["status"]) => {
+      const p = papers.find((x) => x.id === id);
+      const patch: Partial<Paper> = { status, read: status === "done" };
+      // Bookmarks: "Done" archives, "To read"/"Reading" returns it to the inbox.
+      if (p && isBookmark(p)) patch.archived = status === "done";
+      // When a selected bookmark is finished, advance to the next item in view so
+      // the detail panel shows what's next rather than the just-archived one.
+      const advance =
+        p && isBookmark(p) && status === "done" && selectedId === id ? neighborInView(id) : undefined;
+      patchPaper(id, patch);
+      if (advance) setSelectedId(advance);
+    },
+    // Reader "✓ Done": finish the current item and open the next unread in the
+    // reader (continuous reading), or fall back to the library when none remain.
+    markDoneAndNext: (id: string) => {
+      const next = neighborInView(id);
+      const p = papers.find((x) => x.id === id);
+      const patch: Partial<Paper> = { status: "done", read: true };
+      if (p && isBookmark(p)) patch.archived = true;
+      patchPaper(id, patch);
+      if (next) {
+        setReaderId(next);
+        setSelectedId(next);
+      } else {
+        setScreen("library");
+      }
+    },
     deletePaper: (id: string) => {
       // strip dangling related back-references in other papers
       setPapers((ps) =>
@@ -1143,18 +1769,84 @@ export function useStore() {
         version: 1,
         papers,
         collections,
+        feeds,
         settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
       });
       showToast("Backup downloaded");
     },
     importBackup: (text: string) => {
-      if (restoreFromBackupText(text)) showToast("Library restored");
+      void requestConfirm({
+        title: "Restore this backup?",
+        body: "This replaces your current library. A safety backup of your current library downloads first.",
+        confirmLabel: "Restore",
+        danger: true,
+      }).then((ok) => {
+        if (ok && restoreFromBackupText(text)) showToast("Library restored");
+      });
+    },
+    // Import a Pocket export (ril_export.html) as bookmarks (Pocket shut down 2025).
+    importPocket: async (html: string) => {
+      const items = parsePocketHtml(html);
+      if (!items.length) {
+        showToast("No bookmarks found in that file", "error");
+        return;
+      }
+      const current = await r.listPapers();
+      const have = new Set(current.map((p) => p.id));
+      const t0 = Date.now();
+      const fresh: Paper[] = [];
+      items.forEach((it, i) => {
+        const clean = it.url.split(/[?#]/)[0];
+        const id = "web:" + clean;
+        if (have.has(id)) return;
+        have.add(id);
+        let host = "Web";
+        try {
+          host = new URL(it.url).hostname.replace(/^www\./, "");
+        } catch {
+          /* keep */
+        }
+        fresh.push({
+          id,
+          kind: "article",
+          source: "clip",
+          title: it.title || host,
+          authors: host,
+          authorsFull: "",
+          year: 0,
+          venue: host,
+          doi: "—",
+          arxiv: "—",
+          tags: it.tags,
+          read: false,
+          fav: false,
+          added: "imported",
+          addedTs: it.addedTs || t0 + i,
+          abstract: "",
+          notes: it.url,
+          url: clean,
+          favicon: faviconUrl(host),
+          hl: [],
+          markdown: `[Open original ↗](${it.url})`,
+        });
+      });
+      for (const p of fresh) await r.addPaper(p);
+      if (fresh.length) {
+        setPapers((prev) => {
+          const ids = new Set(prev.map((p) => p.id));
+          return [...fresh.filter((p) => !ids.has(p.id)), ...prev];
+        });
+        setFilter("bookmarks");
+        setScreen("library");
+      }
+      showToast(`Imported ${fresh.length} bookmark${fresh.length === 1 ? "" : "s"} from Pocket ✨`);
     },
 
-    // ---- optional WebDAV sync (user-hosted) ----
+    // ---- optional WebDAV sync (user-hosted), with optional E2E encryption ----
     webdavUrl,
     webdavUser,
     webdavPass,
+    syncPassphrase,
     syncing,
     setWebdav: (url: string, user: string, pass: string) => {
       setWebdavUrlState(url);
@@ -1162,55 +1854,29 @@ export function useStore() {
       setWebdavPassState(pass);
       persistSettings({ webdavUrl: url, webdavUser: user, webdavPass: pass });
     },
-    syncToWebdav: async () => {
-      if (!isTauri() || !webdavUrl) {
-        showToast("Set a WebDAV URL in Settings first", "info");
-        return;
-      }
-      setSyncing(true);
-      try {
-        const snapshot = JSON.stringify({
-          version: 1,
-          papers,
-          collections,
-          settings: { theme, density, view, defaultCite, libraryLocation, watchFolders, glass, model },
-        });
-        await invoke("webdav_upload", {
-          url: webdavUrl,
-          user: webdavUser,
-          pass: webdavPass,
-          contents: snapshot,
-        });
-        showToast("Library pushed to WebDAV ✓");
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : "Sync failed", "error");
-      } finally {
-        setSyncing(false);
-      }
+    setSyncPassphrase: (p: string) => {
+      setSyncPassphraseState(p);
+      persistSettings({ syncPassphrase: p });
     },
-    syncFromWebdav: async () => {
-      if (!isTauri() || !webdavUrl) {
-        showToast("Set a WebDAV URL in Settings first", "info");
-        return;
-      }
-      setSyncing(true);
-      try {
-        const text = await invoke<string>("webdav_download", {
-          url: webdavUrl,
-          user: webdavUser,
-          pass: webdavPass,
-        });
-        if (!text.trim()) {
-          showToast("Nothing on the server yet — push first", "info");
-          return;
-        }
-        if (restoreFromBackupText(text)) showToast("Library pulled from WebDAV ✓");
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : "Sync failed", "error");
-      } finally {
-        setSyncing(false);
-      }
+    syncAuto,
+    setSyncAuto: (on: boolean) => {
+      setSyncAutoState(on);
+      persistSettings({ syncAuto: on });
+      if (on && isTauri() && webdavUrl) void syncPull({ silent: true, auto: true });
     },
+    // ---- self-hosted AI backend (enables AI on iOS/web) ----
+    apiUrl,
+    apiToken,
+    setAiBackend: (url: string, token: string) => {
+      const u = url.trim();
+      const tk = token.trim();
+      setApiUrlState(u);
+      setApiTokenState(tk);
+      setAgentBackend(u, tk);
+      persistSettings({ apiUrl: u, apiToken: tk });
+    },
+    syncToWebdav: () => syncPush(),
+    syncFromWebdav: () => syncPull(),
 
     // ---- flashcards (SM-2-lite) ----
     reviewCard: (paperId: string, idx: number, grade: "again" | "good" | "easy") => {
@@ -1287,6 +1953,81 @@ export function useStore() {
             : c,
         ),
       );
+    },
+
+    // ---- feeds (blog reader) ----
+    feeds,
+    subscribeFeed,
+    refreshFeed,
+    refreshAllFeeds,
+    exportFeedsOPML: () => {
+      if (!feeds.length) {
+        showToast("No feeds to export");
+        return;
+      }
+      downloadText("marginalia-feeds.opml", feedsToOPML(feeds), "text/xml");
+      showToast("Exported feeds.opml");
+    },
+    importFeedsOPML: async (text: string) => {
+      const urls = opmlToUrls(text);
+      if (!urls.length) {
+        showToast("No feeds found in that OPML", "error");
+        return;
+      }
+      showToast(`Importing ${urls.length} feed${urls.length === 1 ? "" : "s"}…`, "info");
+      let ok = 0;
+      for (const u of urls) if ((await subscribeFeed(u, { silent: true })) !== null) ok++;
+      setScreen("feeds");
+      showToast(`Imported ${ok}/${urls.length} feed${urls.length === 1 ? "" : "s"} ✨`);
+    },
+    markFeedRead: (id: string) => {
+      const targets = papers.filter((p) => p.feedId === id && !p.read);
+      if (!targets.length) return;
+      setPapers((ps) =>
+        ps.map((p) => (p.feedId === id && !p.read ? { ...p, read: true, status: "done" } : p)),
+      );
+      targets.forEach((p) => track(r.updatePaper(p.id, { read: true, status: "done" })));
+      showToast(`Marked ${targets.length} post${targets.length === 1 ? "" : "s"} read`);
+    },
+    markAllFeedsRead: () => {
+      const targets = papers.filter((p) => itemSource(p) === "feed" && isArticle(p) && !p.read);
+      if (!targets.length) {
+        showToast("No unread posts");
+        return;
+      }
+      const ids = new Set(targets.map((p) => p.id));
+      setPapers((ps) => ps.map((p) => (ids.has(p.id) ? { ...p, read: true, status: "done" } : p)));
+      targets.forEach((p) => track(r.updatePaper(p.id, { read: true, status: "done" })));
+      showToast(`Marked ${targets.length} post${targets.length === 1 ? "" : "s"} read`);
+    },
+    archiveItem: (id: string) => {
+      patchPaper(id, { archived: true, read: true, status: "done" });
+      showToast("Archived", "info");
+    },
+    unarchiveItem: (id: string) => {
+      patchPaper(id, { archived: false });
+      showToast("Restored from archive", "info");
+    },
+    removeFeed: (id: string, alsoPosts = false) => {
+      persistFeeds(feeds.filter((f) => f.id !== id));
+      if (alsoPosts) {
+        const drop = new Set(papers.filter((p) => p.feedId === id).map((p) => p.id));
+        if (drop.size) {
+          setPapers((ps) => ps.filter((p) => !drop.has(p.id)));
+          drop.forEach((pid) => track(r.deletePaper(pid)));
+        }
+      }
+      if (filter === "feed:" + id) setFilter("feeds");
+      showToast("Unsubscribed");
+    },
+    renameFeed: (id: string, title: string) => {
+      const t = title.trim();
+      if (!t) return;
+      persistFeeds(feeds.map((f) => (f.id === id ? { ...f, title: t } : f)));
+    },
+    setFeedFolder: (id: string, folder: string) => {
+      const f = folder.trim();
+      persistFeeds(feeds.map((x) => (x.id === id ? { ...x, folder: f || undefined } : x)));
     },
 
     // ---- bulk ----
@@ -1698,6 +2439,14 @@ export function useStore() {
     openChatAboutSelection: (text: string) => {
       setChatScope("paper");
       setChatSeed("");
+      setChatSelection(text);
+      setChatOpen(true);
+    },
+    // pin a passage AND prefill a preset question (inline reading AI) — the user
+    // presses Enter to run it. Used by the reader's selection popover.
+    openChatPreset: (text: string, question: string) => {
+      setChatScope("paper");
+      setChatSeed(question);
       setChatSelection(text);
       setChatOpen(true);
     },

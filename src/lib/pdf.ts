@@ -218,6 +218,21 @@ export async function extractFullText(pdf: PDFDocumentProxy, maxChars = 60000): 
   return out.join("\n\n").slice(0, maxChars);
 }
 
+// Extract a single page's text as readable prose for text-to-speech. Joins the
+// pdf.js text items, repairs words hyphenated across line breaks, and collapses
+// whitespace so the voice reads naturally rather than spelling out line breaks.
+export async function getPageText(pdf: PDFDocumentProxy, pageNum: number): Promise<string> {
+  const page = await pdf.getPage(pageNum);
+  const content = await page.getTextContent();
+  const text = content.items
+    .map((it) => ("str" in it ? (it as { str: string }).str : ""))
+    .join(" ");
+  return text
+    .replace(/([A-Za-z])-\s+([a-z])/g, "$1$2") // de-hyphenate line-broken words
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function searchInPdf(
   pdf: PDFDocumentProxy,
   term: string,

@@ -21,14 +21,73 @@ async function activeTab() {
   return tab;
 }
 
+// Is the active page an academic paper page (so it should resolve to a paper with
+// its PDF, rather than be clipped as a web article)? Reuses scan.js, which flags
+// the current page with "★ This page" when it carries citation_* meta / DOI / arXiv.
+async function isAcademicPage(tab) {
+  if (/arxiv\.org\/(abs|pdf)\//i.test(tab.url) || /\bdoi\.org\/10\./i.test(tab.url)) return true;
+  try {
+    const res = await api.tabs.executeScript(tab.id, { file: "scan.js" });
+    const entries = (res && res[0]) || [];
+    return entries.some((e) => e.label && e.label.startsWith("★ This page"));
+  } catch {
+    return false;
+  }
+}
+
+// Clip the active tab to Markdown (full text) and save it as a bookmark/article.
+async function clipActiveTab(tab) {
+  await api.tabs.executeScript(tab.id, { file: "vendor/Readability.js" });
+  await api.tabs.executeScript(tab.id, { file: "vendor/turndown.js" });
+  await api.tabs.executeScript(tab.id, { file: "vendor/turndown-plugin-gfm.js" });
+  const res = await api.tabs.executeScript(tab.id, { file: "clip.js" });
+  const data = res && res[0];
+  if (!data || !data.markdown) throw new Error("Couldn't extract this page's content.");
+  data.kind = "article";
+  await margClip(data);
+  return data;
+}
+
+// Smart save: academic pages → resolve to a paper (+ PDF); everything else →
+// bookmark the full article (the chosen "full snapshots" model).
 $("savePage").addEventListener("click", async () => {
   const tab = await activeTab();
   if (!tab?.url) return;
+  toast("Saving…", "ok");
   try {
-    await margSend(tab.url);
-    toast("Saved this page to Marginalia ✓", "ok");
+    if (await isAcademicPage(tab)) {
+      await margSend(tab.url);
+      toast("Saved paper to Marginalia ✓", "ok");
+    } else {
+      const data = await clipActiveTab(tab);
+      toast(`Bookmarked “${(data.title || "page").slice(0, 34)}” ✓`, "ok");
+    }
   } catch (e) {
-    toast(e.message, "err");
+    toast(e.message || "Save failed (try a normal http/https page).", "err");
+  }
+});
+
+$("clip").addEventListener("click", async () => {
+  const tab = await activeTab();
+  if (!tab?.id) return;
+  toast("Clipping…", "ok");
+  try {
+    const data = await clipActiveTab(tab);
+    toast(`Clipped “${(data.title || "page").slice(0, 36)}” → Marginalia ✓`, "ok");
+  } catch (e) {
+    toast(e.message || "Clip failed (try a normal http/https page).", "err");
+  }
+});
+
+$("subscribe").addEventListener("click", async () => {
+  const tab = await activeTab();
+  if (!tab?.url) return;
+  toast("Subscribing…", "ok");
+  try {
+    await margSubscribe(tab.url);
+    toast("Subscribed to this blog’s feed ✓", "ok");
+  } catch (e) {
+    toast(e.message || "Couldn't find a feed on this page.", "err");
   }
 });
 

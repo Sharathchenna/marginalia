@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Marginalia Connector",
-  "version": "0.1.0",
-  "description": "Save papers from any page into your local Marginalia library — one click, a right-click on a link, or scan a whole page for every arXiv / DOI / PDF link.",
+  "version": "0.1.4",
+  "description": "Save papers, bookmark articles (full text), and subscribe to blog feeds — straight into your local Marginalia library. One click, a right-click, or scan a page for every arXiv / DOI / PDF link.",
   "browser_specific_settings": {
     "gecko": {
       "id": "marginalia-connector@marginalia.local",

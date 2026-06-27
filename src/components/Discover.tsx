@@ -3,6 +3,7 @@ import type { Store } from "../store";
 import {
   federatedSearch,
   hitToPaper,
+  serverFeed,
   SOURCES,
   trendingHuggingFace,
   type DiscoverHit,
@@ -56,7 +57,9 @@ export function Discover({ store: s }: { store: Store }) {
     setError("");
     setRan(true);
     try {
-      const r = await trendingHuggingFace();
+      // Prefer the server's curated feed (adds the inLibrary signal + parity with
+      // iOS) when a self-hosted server is configured; else fetch HF directly.
+      const r = s.apiToken ? await serverFeed(s.apiUrl, s.apiToken) : await trendingHuggingFace();
       if (id === reqId.current) setResults(r);
     } catch (e) {
       if (id === reqId.current) {

@@ -1,7 +1,8 @@
 # Marginalia
 
 A local-first research paper manager — a calm, reading-first alternative to
-Mendeley/Zotero. Built with **Tauri + React + TypeScript**.
+Mendeley/Zotero — that is **also** a full-text bookmark manager and RSS blog
+reader. Built with **Tauri + React + TypeScript**.
 
 It implements the UI from the Claude Design handoff ("Paper Manager") **and**
 wires it to working local-first functionality: persistent storage, live
@@ -39,6 +40,8 @@ npm run tauri dev
 | Settings (library location, watch folders, theme, cite style) | ✅ |
 | Onboarding first-run screen | ✅ |
 | Light / dark theme + compact / comfortable density | ✅ |
+| Bookmark manager — full-text web article snapshots (clipper) | ✅ |
+| Blog reader — RSS/Atom subscriptions, unread inbox, OPML | ✅ |
 
 Keyboard: **⌘K** opens the palette, **Esc** closes overlays, **↑/↓** move the
 library selection. **⌘/Ctrl-click** a row to multi-select for the bulk bar.
@@ -107,11 +110,13 @@ src/
     tauriRepo.ts      # Tauri command backend (native)
     tauri.ts          # isTauri() + invoke() helper
     metadata.ts       # arXiv + CrossRef identifier lookup
+    items.ts          # unified item helpers (paper vs web article, favicons)
+    feeds.ts          # RSS/Atom parser, feed discovery, OPML, article ingestion
     pdf.ts            # pdf.js setup, page/text-layer rendering
     search.ts         # ranked full-text search
     citation.ts       # APA/MLA/Chicago/BibTeX/RIS + import parser
   styles/             # tokens.css (design tokens) + app.css (components)
-  components/         # TitleBar, Sidebar, Library, Reader, Notebook,
+  components/         # TitleBar, Sidebar, Library, Reader, Notebook, Feeds,
                       # Settings, Onboarding, CommandPalette, Modals, Toast
 src-tauri/
   src/lib.rs          # Tauri commands + setup + watcher
@@ -121,6 +126,9 @@ src-tauri/
 scripts/
   gen-seed.mjs        # regenerate src-tauri/seed.json from data.ts
   smoke.mjs           # runtime tests for the logic modules
+server/               # self-hostable AI backend (HTTP/SSE → agent.mjs) for iOS/web
+ios/share-extension/  # iOS "Share → Marginalia" extension (added in Xcode)
+docs/IOS-PLAN.md      # runbook for building the iOS companion app
 ```
 
 ## Future ideas

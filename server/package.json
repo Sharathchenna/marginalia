@@ -1,0 +1,13 @@
+{
+  "name": "marginalia-ai-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Self-hostable HTTP/SSE bridge to the Marginalia Claude Agent SDK sidecar — enables AI on iOS and the web build.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

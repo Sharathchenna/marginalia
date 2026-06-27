@@ -7,6 +7,14 @@ export function isTauri(): boolean {
   );
 }
 
+// Running on a mobile platform (iOS/Android webview). Used to switch to the
+// single-column layout and hide desktop-only features (watch folders, the
+// localhost-capture bookmarklet, library-folder picking).
+export function isMobilePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
+
 // Thin wrapper so non-Tauri builds never statically import the API.
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");

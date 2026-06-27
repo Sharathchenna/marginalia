@@ -265,8 +265,59 @@ async function lookupHuggingFace(id: string, hfType: "model" | "dataset"): Promi
   });
 }
 
+/** Build a library item for a plain web page (blog post, docs, lab page) from
+ *  just its URL — the browser fallback when we can't fetch the page. */
+function webPaperFromUrl(raw: string): Paper {
+  const clean = raw.split(/[?#]/)[0];
+  let host = "Web";
+  let slug = clean;
+  try {
+    const u = new URL(raw);
+    host = u.hostname.replace(/^www\./, "");
+    slug = u.pathname.split("/").filter(Boolean).pop() || host;
+  } catch {
+    /* keep defaults */
+  }
+  const title =
+    slug
+      .replace(/\.[a-z0-9]+$/i, "")
+      .replace(/[-_]+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || host;
+  return base({
+    id: "web:" + clean,
+    title,
+    authors: host,
+    authorsFull: host,
+    venue: host,
+    notes: raw,
+    markdown: `[Open original ↗](${raw})`,
+  });
+}
+
+// Save an arbitrary web page: native fetches the page for a real title/abstract;
+// the browser preview falls back to a URL-derived title (cross-origin fetch is
+// blocked there).
+async function lookupWebPage(raw: string): Promise<Paper> {
+  if (isTauri()) {
+    try {
+      return await invoke<Paper>("fetch_webpage", { url: raw });
+    } catch {
+      return webPaperFromUrl(raw);
+    }
+  }
+  return webPaperFromUrl(raw);
+}
+
 export async function lookupIdentifier(raw: string): Promise<Paper> {
-  const kind = classifyIdentifier(raw);
+  let kind: Kind;
+  try {
+    kind = classifyIdentifier(raw);
+  } catch (e) {
+    // Not an academic identifier — but if it's a web page, save it as one.
+    if (/^https?:\/\/\S+/i.test(raw.trim())) return lookupWebPage(raw.trim());
+    throw e;
+  }
   if (kind.type === "pdf") return paperFromPdfUrl(kind.url);
   if (kind.type === "hf") return lookupHuggingFace(kind.id, kind.hfType);
   if (kind.type === "arxiv") return resolveArxiv(kind.id);

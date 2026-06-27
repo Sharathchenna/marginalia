@@ -6,3 +6,16 @@ dist-ssr
 
 # Rust / Tauri
 src-tauri/target
+server-rs/target
+server-rs/data
+
+# web-ext signing output
+web-ext-artifacts/
+
+# Claude Code session data / worktrees
+.claude/
+
+# iOS / Xcode build artifacts + user state
+ios-native/build/
+**/xcuserdata/
+*.xcuserstate

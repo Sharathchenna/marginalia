@@ -2,10 +2,22 @@
 // and listens for `agent-event` events (tagged with our requestId), forwarding
 // delta/metadata/done/error to handlers. Supports chat, summarize, and extract.
 import type { Paper } from "../types";
-import { invoke, isTauri } from "./tauri";
+import { invoke, isMobilePlatform, isTauri } from "./tauri";
 
+// Optional self-hosted AI backend (see server/). When configured, all AI runs
+// through it over HTTPS — which is how iOS and the web build get AI (no local
+// Node sidecar). Set from the store; mirrors setAgentModel.
+let apiUrl = "";
+let apiToken = "";
+export function setAgentBackend(url: string, token: string): void {
+  apiUrl = (url || "").trim().replace(/\/+$/, "");
+  apiToken = (token || "").trim();
+}
+
+// AI is available if a backend is configured, or on desktop (local sidecar).
+// On mobile Tauri there's no sidecar, so a backend is required.
 export function isAgentAvailable(): boolean {
-  return isTauri();
+  return !!apiUrl || (isTauri() && !isMobilePlatform());
 }
 
 // Selectable models for AI actions. "" means the SDK/account default.
@@ -73,14 +85,110 @@ export function setAgentModel(model: string): void {
   currentModel = model || "";
 }
 
+// Apply one streamed agent event to the handlers. Shared by the local (Tauri
+// event) and remote (HTTP/SSE) transports. Returns true if terminal.
+function applyAgentEvent(p: Record<string, unknown>, handlers: ChatHandlers): boolean {
+  switch (p.type) {
+    case "delta":
+      handlers.onDelta?.(String(p.text ?? ""));
+      return false;
+    case "metadata":
+      handlers.onMetadata?.((p.data as Record<string, unknown>) ?? {});
+      return false;
+    case "tags":
+      handlers.onTags?.((p.data as AutoTagResult) ?? {});
+      return false;
+    case "verdict":
+      handlers.onVerdict?.((p.data as AssessResult) ?? { summary: "", items: [] });
+      return false;
+    case "thinking_start":
+      handlers.onThinkingStart?.();
+      return false;
+    case "thinking":
+      handlers.onThinking?.(String(p.text ?? ""));
+      return false;
+    case "tool":
+      handlers.onTool?.({
+        name: p.name as string | undefined,
+        phase: (p.phase as "start" | "done") ?? "start",
+      });
+      return false;
+    case "done":
+      if (p.isError) handlers.onError?.(String(p.error ?? "The model reported an error."));
+      else handlers.onDone?.({ cost: (p.cost as number) ?? null, model: (p.model as string) ?? null });
+      return true;
+    case "error":
+      handlers.onError?.(String(p.error ?? "Unknown error"));
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Remote transport: POST the payload to the self-hosted backend and parse its
+// SSE stream of agent events. Works on iOS, web, and desktop.
+async function runAgentRemote(
+  payload: Record<string, unknown>,
+  handlers: ChatHandlers,
+): Promise<() => void> {
+  const ctrl = new AbortController();
+  let settled = false;
+  void (async () => {
+    try {
+      const res = await fetch(`${apiUrl}/v1/agent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) {
+        handlers.onError?.(`AI backend error (${res.status}). Check the URL and token in Settings.`);
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sep: number;
+        // SSE events are separated by a blank line; each carries a `data:` line.
+        while ((sep = buf.indexOf("\n\n")) >= 0) {
+          const evt = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          for (const line of evt.split("\n")) {
+            const data = line.replace(/^data:\s?/, "").trim();
+            if (!data) continue;
+            try {
+              if (applyAgentEvent(JSON.parse(data), handlers)) settled = true;
+            } catch {
+              /* keep-alive / non-JSON line */
+            }
+          }
+        }
+      }
+      if (!settled) handlers.onError?.("The AI backend closed the stream unexpectedly.");
+    } catch (e) {
+      if (!ctrl.signal.aborted) handlers.onError?.(e instanceof Error ? e.message : String(e));
+    }
+  })();
+  return () => ctrl.abort();
+}
+
 async function runAgent(
   payload: Record<string, unknown>,
   handlers: ChatHandlers,
 ): Promise<() => void> {
   if (currentModel && payload.model === undefined) payload = { model: currentModel, ...payload };
-  if (!isTauri()) {
+  // A configured backend wins (and is the only option on iOS / web).
+  if (apiUrl) return runAgentRemote(payload, handlers);
+  if (!isTauri() || isMobilePlatform()) {
     handlers.onError?.(
-      "AI runs through the native sidecar — launch the desktop app (not the web preview).",
+      "AI needs a backend. Set an AI backend URL in Settings, or use the desktop app.",
     );
     return () => {};
   }

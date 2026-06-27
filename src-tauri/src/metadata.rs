@@ -282,6 +282,142 @@ fn retraction_from_message(m: &Value) -> Value {
     json!({ "retracted": false })
 }
 
+// Save an arbitrary web page (blog post, docs, lab page) as a library item —
+// the "webpage" reference type. Fetches the page and pulls its title + Open
+// Graph description so it lands with real metadata, not just a URL.
+pub fn fetch_webpage(url: &str) -> Result<Value, String> {
+    let url = url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Not a web URL".into());
+    }
+    let body = http_client()?
+        .get(url)
+        .send()
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.text())
+        .map_err(|e| e.to_string())?;
+    let host = url
+        .split("://")
+        .nth(1)
+        .unwrap_or(url)
+        .split('/')
+        .next()
+        .unwrap_or(url)
+        .trim_start_matches("www.")
+        .to_string();
+    let title_tag = between(&body, "<title>", "</title>")
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "));
+    let title = decode_entities(
+        &meta_content(&body, "og:title")
+            .or(title_tag)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| host.clone()),
+    );
+    let site = meta_content(&body, "og:site_name").map(|s| decode_entities(&s));
+    let desc = meta_content(&body, "og:description")
+        .or_else(|| meta_content(&body, "description"))
+        .map(|s| decode_entities(&s))
+        .unwrap_or_default();
+    let clean = url.split(['?', '#']).next().unwrap_or(url);
+    Ok(json!({
+        "id": format!("web:{clean}"),
+        "title": title,
+        "authors": site.clone().unwrap_or_else(|| host.clone()),
+        "authorsFull": site.clone().unwrap_or_default(),
+        "year": 0,
+        "venue": site.unwrap_or(host),
+        "doi": "—",
+        "arxiv": "—",
+        "tags": [],
+        "read": false,
+        "fav": false,
+        "added": "just now",
+        "addedTs": now_ms(),
+        "abstract": desc,
+        "notes": url,
+        "hl": [],
+        "markdown": format!("[Open original ↗]({url})"),
+    }))
+}
+
+// Fetch an RSS/Atom feed (or a page to sniff for one) with a conditional GET, so
+// repeat polls are cheap when nothing changed. Returns
+// `{ status, body, etag, lastModified }`; a 304 yields an empty body. Never errors
+// on a non-2xx status (the caller inspects `status`) — only on transport failure.
+pub fn fetch_feed(url: &str, etag: &str, last_modified: &str) -> Result<Value, String> {
+    let url = url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Not a web URL".into());
+    }
+    let mut req = http_client()?.get(url);
+    if !etag.is_empty() {
+        req = req.header("If-None-Match", etag);
+    }
+    if !last_modified.is_empty() {
+        req = req.header("If-Modified-Since", last_modified);
+    }
+    let resp = req.send().map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let header = |name: &str| {
+        resp.headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string()
+    };
+    let etag_out = header("etag");
+    let lm_out = header("last-modified");
+    let body = if status == 304 {
+        String::new()
+    } else {
+        resp.text().map_err(|e| e.to_string())?
+    };
+    Ok(json!({
+        "status": status,
+        "body": body,
+        "etag": etag_out,
+        "lastModified": lm_out,
+    }))
+}
+
+// Find a <meta> tag referencing `prop` (as name/property) and return its content.
+fn meta_content(html: &str, prop: &str) -> Option<String> {
+    let lower = html.to_lowercase();
+    let mut search = 0usize;
+    while let Some(rel) = lower[search..].find("<meta") {
+        let start = search + rel;
+        let end = match lower[start..].find('>') {
+            Some(e) => start + e + 1,
+            None => break,
+        };
+        let tlow = &lower[start..end];
+        if tlow.contains(&format!("\"{prop}\"")) || tlow.contains(&format!("'{prop}'")) {
+            if let Some(c) = attr(&html[start..end], "content") {
+                let c = c.trim();
+                if !c.is_empty() {
+                    return Some(c.to_string());
+                }
+            }
+        }
+        search = end;
+    }
+    None
+}
+
+// Extract a quoted attribute value from a single tag (case-insensitive name).
+fn attr(tag: &str, name: &str) -> Option<String> {
+    let tl = tag.to_lowercase();
+    let i = tl.find(&format!("{name}="))? + name.len() + 1;
+    let rest = &tag[i..];
+    let q = rest.chars().next()?;
+    if q != '"' && q != '\'' {
+        return None;
+    }
+    let start = q.len_utf8();
+    let end = rest[start..].find(q)? + start;
+    Some(rest[start..end].to_string())
+}
+
 fn fetch_doi(doi: &str) -> Result<Value, String> {
     let url = format!("https://api.crossref.org/works/{doi}");
     let v: Value = http_client()?

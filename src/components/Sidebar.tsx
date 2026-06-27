@@ -1,10 +1,14 @@
 import type { Store } from "../store";
 import { AGENT_MODELS, isAgentAvailable } from "../lib/agent";
+import { faviconUrl } from "../lib/items";
 import {
   AllPapersIcon,
+  BookmarkIcon,
   ClockIcon,
   DotIcon,
+  InboxIcon,
   NotebookIcon,
+  RssIcon,
   SearchIcon,
   SettingsIcon,
   StarNavIcon,
@@ -27,6 +31,11 @@ export function Sidebar({ store: s }: { store: Store }) {
             <WatchFolderIcon size={15} />
             <span className="grow">Home</span>
           </button>
+          <button className="nav-item" data-active={isF("queue")} onClick={() => s.pickFilter("queue")}>
+            <InboxIcon size={15} />
+            <span className="grow">Inbox</span>
+            <span className="nav-count">{s.counts.queue}</span>
+          </button>
           <button className="nav-item" data-active={isF("all")} onClick={() => s.pickFilter("all")}>
             <AllPapersIcon size={15} />
             <span className="grow">All Papers</span>
@@ -42,11 +51,62 @@ export function Sidebar({ store: s }: { store: Store }) {
             <span className="grow">Unread</span>
             <span className="nav-count">{s.counts.unread}</span>
           </button>
-          <button className="nav-item" data-active={isF("queue")} onClick={() => s.pickFilter("queue")}>
-            <ClockIcon size={15} />
-            <span className="grow">Reading Queue</span>
-            <span className="nav-count">{s.counts.queue}</span>
+        </div>
+
+        <div className="section-head">
+          <span className="label">Read</span>
+          <span
+            className="plus"
+            title="Subscribe to a blog feed"
+            onClick={() => s.goScreen("feeds")}
+          >
+            +
+          </span>
+        </div>
+        <div className="nav-group">
+          <button className="nav-item" data-active={isF("bookmarks")} onClick={() => s.pickFilter("bookmarks")}>
+            <BookmarkIcon size={15} />
+            <span className="grow">Bookmarks</span>
+            <span className="nav-count">{s.counts.bookmarks}</span>
           </button>
+          <button
+            className="nav-item"
+            data-active={s.screen === "feeds" || isF("feeds")}
+            onClick={() => s.goScreen("feeds")}
+          >
+            <RssIcon size={15} />
+            <span className="grow">Blog Feeds</span>
+            {s.counts.feedsUnread > 0 && <span className="nav-count">{s.counts.feedsUnread}</span>}
+          </button>
+          {s.counts.archived > 0 && (
+            <button className="nav-item" data-active={isF("archived")} onClick={() => s.pickFilter("archived")}>
+              <ClockIcon size={15} />
+              <span className="grow">Archive</span>
+              <span className="nav-count">{s.counts.archived}</span>
+            </button>
+          )}
+          {s.feeds.map((f) => {
+            const unread = s.feedUnread[f.id] ?? 0;
+            const icon = f.favicon || faviconUrl(new URL(f.siteUrl || f.url, f.url).hostname.replace(/^www\./, ""));
+            return (
+              <button
+                key={f.id}
+                className="nav-item nav-feed"
+                data-active={isF("feed:" + f.id)}
+                title={f.lastError ? `Last sync failed: ${f.lastError}` : f.title}
+                onClick={() => s.pickFilter("feed:" + f.id)}
+              >
+                {icon ? (
+                  <img className="feed-favicon" src={icon} alt="" onError={(e) => (e.currentTarget.style.visibility = "hidden")} />
+                ) : (
+                  <span className="feed-favicon feed-favicon-fallback">{f.title.charAt(0).toUpperCase()}</span>
+                )}
+                <span className="grow">{f.title}</span>
+                {f.lastError && <span className="feed-err" title={f.lastError}>!</span>}
+                {unread > 0 && <span className="nav-count">{unread}</span>}
+              </button>
+            );
+          })}
         </div>
 
         <div className="section-head">
@@ -55,8 +115,11 @@ export function Sidebar({ store: s }: { store: Store }) {
             className="plus"
             title="New collection"
             onClick={() => {
-              const n = window.prompt("New collection name");
-              if (n) s.createCollection(n);
+              void s
+                .requestPrompt({ title: "New collection", placeholder: "Collection name", confirmLabel: "Create" })
+                .then((n) => {
+                  if (n && n.trim()) s.createCollection(n);
+                });
             }}
           >
             +
@@ -78,8 +141,11 @@ export function Sidebar({ store: s }: { store: Store }) {
                 <span
                   title="Rename"
                   onClick={() => {
-                    const n = window.prompt("Rename collection", c.name);
-                    if (n) s.renameCollection(c.id, n);
+                    void s
+                      .requestPrompt({ title: "Rename collection", value: c.name, confirmLabel: "Rename" })
+                      .then((n) => {
+                        if (n && n.trim()) s.renameCollection(c.id, n);
+                      });
                   }}
                 >
                   ✎
@@ -87,8 +153,16 @@ export function Sidebar({ store: s }: { store: Store }) {
                 <span
                   title="Delete"
                   onClick={() => {
-                    if (window.confirm(`Delete collection “${c.name}”? (papers are kept)`))
-                      s.deleteCollection(c.id);
+                    void s
+                      .requestConfirm({
+                        title: `Delete “${c.name}”?`,
+                        body: "The papers are kept — only the collection is removed.",
+                        confirmLabel: "Delete",
+                        danger: true,
+                      })
+                      .then((ok) => {
+                        if (ok) s.deleteCollection(c.id);
+                      });
                   }}
                 >
                   ×
@@ -139,6 +213,10 @@ export function Sidebar({ store: s }: { store: Store }) {
         <button className="nav-item" data-active={s.screen === "flashcards"} onClick={() => s.goScreen("flashcards")}>
           <DotIcon size={15} />
           <span className="grow">Flashcards</span>
+        </button>
+        <button className="nav-item" data-active={s.screen === "review"} onClick={() => s.goScreen("review")}>
+          <ClockIcon size={15} />
+          <span className="grow">Daily Review</span>
         </button>
         <button className="nav-item" data-active={s.screen === "graph"} onClick={() => s.goScreen("graph")}>
           <AllPapersIcon size={15} />

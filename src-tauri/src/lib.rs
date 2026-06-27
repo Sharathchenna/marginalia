@@ -6,9 +6,11 @@ mod capture;
 mod db;
 mod embeddings;
 mod metadata;
+mod tts;
 
 use std::sync::Mutex;
 
+#[cfg(desktop)]
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -16,6 +18,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 struct AppState {
     db: Mutex<Connection>,
+    // Watch-folder watcher is desktop-only (notify has no mobile backend).
+    #[cfg(desktop)]
     watcher: Mutex<Option<RecommendedWatcher>>,
     // live AI sidecar processes by requestId, so ai_cancel can kill them
     children: Mutex<std::collections::HashMap<String, u32>>,
@@ -40,7 +44,10 @@ fn default_settings() -> Value {
         "autoBib": false,
         "webdavUrl": "",
         "webdavUser": "",
-        "webdavPass": ""
+        "webdavPass": "",
+        "ttsProvider": "edge",
+        "ttsVoice": "en-US-AriaNeural",
+        "ttsRate": 1.0
     })
 }
 
@@ -97,6 +104,20 @@ fn save_collections(collections: Value, state: State<AppState>) -> Result<(), St
 }
 
 #[tauri::command]
+fn list_feeds(state: State<AppState>) -> Result<Value, String> {
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+    Ok(db::get_kv(&conn, "feeds")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| json!([])))
+}
+
+#[tauri::command]
+fn save_feeds(feeds: Value, state: State<AppState>) -> Result<(), String> {
+    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+    db::set_kv(&conn, "feeds", &feeds).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_settings(state: State<AppState>) -> Result<Value, String> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
     let mut settings = default_settings();
@@ -145,6 +166,18 @@ fn check_retraction(doi: String) -> Result<Value, String> {
 #[tauri::command]
 fn capture_port() -> u16 {
     capture::port()
+}
+
+/// Save an arbitrary web page as a library item (title + description from the page).
+#[tauri::command]
+fn fetch_webpage(url: String) -> Result<Value, String> {
+    metadata::fetch_webpage(&url)
+}
+
+/// Fetch an RSS/Atom feed (or a page to sniff for one) with a conditional GET.
+#[tauri::command]
+fn fetch_feed(url: String, etag: String, since: String) -> Result<Value, String> {
+    metadata::fetch_feed(&url, &etag, &since)
 }
 
 // ---------- optional sync (user-hosted WebDAV) ----------
@@ -508,6 +541,15 @@ fn import_pdf(src: String, dir: String) -> Result<String, String> {
 }
 
 /// Watch the given folders; emit `watch-import` with the path of each new PDF.
+/// Desktop-only — a no-op on mobile (no user-accessible filesystem to watch).
+#[cfg(mobile)]
+#[tauri::command]
+fn start_watch(app: AppHandle, folders: Vec<String>, state: State<AppState>) -> Result<(), String> {
+    let _ = (&app, &folders, &state);
+    Ok(())
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 fn start_watch(app: AppHandle, folders: Vec<String>, state: State<AppState>) -> Result<(), String> {
     let handle = app.clone();
@@ -570,6 +612,72 @@ fn ensure_on_screen(win: &tauri::WebviewWindow) {
     }
 }
 
+// Route a marginalia:// deep link to the capture pipeline.
+//   marginalia://add?u=<url-encoded>        → emit "capture-url"  (resolve to an item)
+//   marginalia://subscribe?u=<url-encoded>  → emit "capture-feed" (subscribe to a feed)
+//   marginalia://open                       → just focus the window
+fn route_deep_link(app: &AppHandle, raw: &str) {
+    let Some(rest) = raw.strip_prefix("marginalia://") else {
+        return;
+    };
+    let (action, query) = match rest.split_once('?') {
+        Some((a, q)) => (a.trim_end_matches('/'), q),
+        None => (rest.trim_end_matches('/'), ""),
+    };
+    let mut target = String::new();
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == "u" || k == "url" {
+                target = deeplink_decode(v);
+            }
+        }
+    }
+    match action {
+        "add" if !target.is_empty() => {
+            let _ = app.emit("capture-url", target);
+        }
+        "subscribe" if !target.is_empty() => {
+            let _ = app.emit("capture-feed", target);
+        }
+        _ => {}
+    }
+}
+
+// Minimal percent-decoder for the deep-link `u` param (std-only).
+fn deeplink_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                match std::str::from_utf8(&bytes[i + 1..i + 3])
+                    .ok()
+                    .and_then(|h| u8::from_str_radix(h, 16).ok())
+                {
+                    Some(b) => {
+                        out.push(b);
+                        i += 3;
+                    }
+                    None => {
+                        out.push(bytes[i]);
+                        i += 1;
+                    }
+                }
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
 fn shellexpand(p: &str) -> String {
     if let Some(rest) = p.strip_prefix("~/") {
         if let Some(home) = std::env::var_os("HOME") {
@@ -603,6 +711,7 @@ fn seed_if_empty(conn: &Connection) -> rusqlite::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -610,13 +719,44 @@ pub fn run() {
             seed_if_empty(&conn)?;
             app.manage(AppState {
                 db: Mutex::new(conn),
+                #[cfg(desktop)]
                 watcher: Mutex::new(None),
                 children: Mutex::new(std::collections::HashMap::new()),
             });
 
-            // One-click web capture: a localhost listener a bookmarklet can POST
-            // the current page URL to (resolved by the frontend's lookup pipeline).
+            // One-click web capture: a localhost listener a bookmarklet/extension
+            // POSTs the current page URL to. Desktop-only — iOS has no browser
+            // extensions and sandboxes localhost; mobile capture uses the
+            // marginalia:// deep link / Share Extension instead.
+            #[cfg(desktop)]
             capture::start(app.handle().clone());
+
+            // marginalia:// deep link — lets the browser extension launch/focus the
+            // app when it isn't running (Obsidian-style). Opening any marginalia://
+            // URL brings the window to the front; the extension then retries capture.
+            // marginalia:// deep links — focus the window (desktop) AND route any
+            // capture payload to the frontend. On iOS this is the primary capture
+            // path: the Share Extension opens marginalia://add?u=<url> (or
+            // /subscribe?u=) and the existing capture pipeline handles it.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    #[cfg(desktop)]
+                    if let Some(win) = handle.get_webview_window("main") {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                    for url in event.urls() {
+                        route_deep_link(&handle, url.as_str());
+                    }
+                });
+                // Linux/Windows need runtime registration; macOS/iOS use the bundled
+                // Info.plist scheme. Either failure is non-fatal.
+                #[cfg(desktop)]
+                let _ = app.deep_link().register_all();
+            }
 
             // Native window translucency. On macOS 26 (Tahoe) the system renders
             // this NSVisualEffect material as Liquid Glass automatically; on older
@@ -669,11 +809,15 @@ pub fn run() {
             search_papers,
             list_collections,
             save_collections,
+            list_feeds,
+            save_feeds,
             get_settings,
             save_settings,
             lookup_identifier,
             check_retraction,
             capture_port,
+            fetch_webpage,
+            fetch_feed,
             webdav_upload,
             webdav_download,
             open_url,
@@ -689,7 +833,9 @@ pub fn run() {
             semantic_search,
             similar_papers,
             agent::ai_chat,
-            agent::ai_cancel
+            agent::ai_cancel,
+            tts::tts_speak,
+            tts::tts_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Marginalia");
