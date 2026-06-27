@@ -24,6 +24,7 @@
 		30B655074652F2481705D493 /* MacMarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42B3D449842A0D7D382AC34 /* MacMarkdownText.swift */; };
 		34700A18BE9EED971BF0723B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 237806A1E8289092AA05FEC0 /* AppModel.swift */; };
 		358F2C2A3C035B8E1AF27E13 /* EditPaperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6054A2DA902DC1B7AAF8B3AA /* EditPaperView.swift */; };
+		3874ABC8EDFED035A0E8C50A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 599261F2D87C291A8D97DF13 /* Assets.xcassets */; };
 		422371DDBB1C7D7832510E47 /* LatestFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F3883D074E5136C239FFD8 /* LatestFeed.swift */; };
 		43C5F44829E93120A1B3418A /* CiteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DA522C83928358233BA608 /* CiteService.swift */; };
 		47E53147C859BE87E271ADB1 /* TtsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA7C6B71D8AB25B0E3D3CF8 /* TtsService.swift */; };
@@ -373,6 +374,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3874ABC8EDFED035A0E8C50A /* Assets.xcassets in Resources */,
 				7CB35CF9B1EA862739A43E7E /* sample.pdf in Resources */,
 				DD0065A7969570E75EB34038 /* seed.json in Resources */,
 			);
