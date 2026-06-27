@@ -190,13 +190,18 @@ struct Settings: Hashable {
     var webdavUser: String = ""
     var webdavPass: String = ""
     var syncPassphrase: String = ""
+    /// Read-aloud (server Edge neural TTS): voice short-name + rate multiplier.
+    var ttsProvider: String = "edge"
+    var ttsVoice: String = "en-US-AriaNeural"
+    var ttsRate: Double = 1.0
 }
 
 extension Settings: Codable {
     enum CodingKeys: String, CodingKey {
         case theme, density, view, defaultCite, model, embedProvider, embedModel,
              voyageKey, autoBib, apiUrl, apiToken, syncAuto, lastSyncTs,
-             webdavUrl, webdavUser, webdavPass, syncPassphrase
+             webdavUrl, webdavUser, webdavPass, syncPassphrase,
+             ttsProvider, ttsVoice, ttsRate
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -224,5 +229,8 @@ extension Settings: Codable {
         webdavUser = g(.webdavUser, "")
         webdavPass = g(.webdavPass, "")
         syncPassphrase = g(.syncPassphrase, "")
+        ttsProvider = g(.ttsProvider, "edge")
+        ttsVoice = g(.ttsVoice, "en-US-AriaNeural")
+        ttsRate = g(.ttsRate, 1.0)
     }
 }

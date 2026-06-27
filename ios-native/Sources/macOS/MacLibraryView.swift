@@ -4,6 +4,8 @@ import SwiftUI
 // AppModel.selectedId, which the detail column reads to show the reader.
 struct MacLibraryView: View {
     @Environment(AppModel.self) private var model
+    @State private var showAdd = false
+    @State private var showChat = false
 
     var body: some View {
         @Bindable var model = model
@@ -57,6 +59,12 @@ struct MacLibraryView: View {
                 }
                 .pickerStyle(.menu)
 
+                Button { showChat = true } label: { Image(systemName: "bubble.left.and.text.bubble.right") }
+                    .help("Chat with your library")
+
+                Button { showAdd = true } label: { Image(systemName: "plus") }
+                    .help("Add paper")
+
                 Button {
                     Task { await model.syncNow() }
                 } label: {
@@ -70,6 +78,8 @@ struct MacLibraryView: View {
                 .disabled(model.syncing)
             }
         }
+        .sheet(isPresented: $showAdd) { MacAddPaperView().environment(model) }
+        .sheet(isPresented: $showChat) { MacChatView(paper: nil).environment(model) }
     }
 
     private var title: String {
