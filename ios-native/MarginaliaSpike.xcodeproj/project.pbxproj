@@ -10,47 +10,74 @@
 		0629C0B094FC67232F2CFCE4 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4ACB08CE0C606C73B340DB /* SettingsView.swift */; };
 		08B6C2F4E6FF74B03822CB31 /* CiteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622C7C75CDE018E9685AE77C /* CiteView.swift */; };
 		0D783FF255A6E73155E62EC1 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7859067EDCDC8EE6BEE75052 /* DashboardView.swift */; };
+		16FE39B2D184C2940465556B /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFC9836B9A31E0D43A6FAED /* MacSettingsView.swift */; };
 		190C6A2A48063E5FD87A0F8F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 599261F2D87C291A8D97DF13 /* Assets.xcassets */; };
 		1C234D2C78EB1031CE734E8D /* ReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6121F2F7CE0C53BDE35679AC /* ReaderView.swift */; };
 		233EA8841DC650FE3A0C97E6 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C419A591A0CB8A7DEADA07 /* FeedService.swift */; };
 		26308D74DF8A4AFFB61DC3BF /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3702EF7F27EDE8BA4BB59D3C /* Models.swift */; };
+		2A1C02A1DC00BDB2D9450FA1 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C419A591A0CB8A7DEADA07 /* FeedService.swift */; };
 		2BBF8825AF23CF1E9108D192 /* Crypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DBB1BEC1611AF7958D2EB3B /* Crypto.swift */; };
+		34700A18BE9EED971BF0723B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 237806A1E8289092AA05FEC0 /* AppModel.swift */; };
 		358F2C2A3C035B8E1AF27E13 /* EditPaperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6054A2DA902DC1B7AAF8B3AA /* EditPaperView.swift */; };
+		422371DDBB1C7D7832510E47 /* LatestFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F3883D074E5136C239FFD8 /* LatestFeed.swift */; };
+		50645782821ADC374D27940E /* MacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1486F582DAA7F83FF4A86252 /* MacRootView.swift */; };
 		5512CDCDF90AC59ED02BA5BC /* PDFService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5946E712A57EF6609CAC7B /* PDFService.swift */; };
+		590B254C69A50429B7F4D377 /* LatestFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F3883D074E5136C239FFD8 /* LatestFeed.swift */; };
+		59D34E011561F607C9AC8D0E /* PDFService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5946E712A57EF6609CAC7B /* PDFService.swift */; };
 		5F9239676CBE4885692EF0D3 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E3A32ED4256EC09DE2CFE1 /* LibraryView.swift */; };
+		64622EAA9CDFFE0A17E1CC03 /* MacSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41904AB07077E72E453B9A4B /* MacSidebarView.swift */; };
+		655CFB1FD09E7A698117B927 /* Citation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62FE9D2684DF89C0F5B9E5D5 /* Citation.swift */; };
 		65C99543DF6E88F3AAC85282 /* Citation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62FE9D2684DF89C0F5B9E5D5 /* Citation.swift */; };
+		67162B489362D2EBCF836953 /* LookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79663593D4332C71005F07B6 /* LookupService.swift */; };
 		67EA054A42C9676ADBBD2D1C /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 237806A1E8289092AA05FEC0 /* AppModel.swift */; };
 		69B6B373FBB6328BA21EEC16 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87C3F597FD45AE87D67FBF4D /* MarkdownText.swift */; };
 		6DE8D1C705259A70FD58954E /* GraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC240C01F917382B9CD30095 /* GraphView.swift */; };
 		6F56602C92AC9102CA578EED /* PDFKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BDDFEA3C4C92383F347380 /* PDFKitView.swift */; };
 		70D266AB7B57A183AEE44A03 /* AddPaperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBB8F4C5D9450AE86F1B6CF0 /* AddPaperView.swift */; };
 		77231F5A59B06BF3822D00C8 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DFC065F2E12B3ABE42DE897 /* ChatService.swift */; };
+		7C70CC351009CC9DB0C9E892 /* RemoteSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909D1762D13873BB394C78FA /* RemoteSync.swift */; };
+		7CB35CF9B1EA862739A43E7E /* sample.pdf in Resources */ = {isa = PBXBuildFile; fileRef = E20EF10107ED20EA74681A04 /* sample.pdf */; };
 		7CFC0135950ECBBEB2A6B006 /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8D61E92DA8CECAC94E1066 /* Repository.swift */; };
 		866DB87CE996CB1493791DE5 /* SecondaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A4BAD6C536A68917A60C620 /* SecondaryViews.swift */; };
 		8A3400492F4EE217BBAF4740 /* StudyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC249DF12E314ED4F5066B3 /* StudyViews.swift */; };
+		9839A1A256774FA8F90353FB /* MacReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D59D58314224C7D7DE446CB /* MacReaderView.swift */; };
+		98A1ADDA2B7CFC675B0A6619 /* MarginaliaMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C710B3C325C6FBAB04258977 /* MarginaliaMacApp.swift */; };
 		9DBF617491441F9AAC2C25A9 /* MarginaliaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FAE5615DFC5928A0C4D834 /* MarginaliaApp.swift */; };
 		A0D764C90262DCB124430AEB /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2421A5192CF02D31FF69966A /* SyncService.swift */; };
 		AB07B24DC25EC444543B8A22 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2975A13D81B68D7184B343BC /* ChatView.swift */; };
 		B4AC147AD4B16DD624EE31F8 /* sample.pdf in Resources */ = {isa = PBXBuildFile; fileRef = E20EF10107ED20EA74681A04 /* sample.pdf */; };
 		B8A03BEAA124955ACD8CBB9C /* DiscoverService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D004300A862F919759E300 /* DiscoverService.swift */; };
+		BE6624F379639EBEC87997B6 /* DiscoverService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D004300A862F919759E300 /* DiscoverService.swift */; };
 		BFA54DC41105E1E8D94DC4B7 /* LookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79663593D4332C71005F07B6 /* LookupService.swift */; };
 		BFFD6319A22FF69F99F39263 /* SRS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A671D30298047E5D422DC19D /* SRS.swift */; };
+		C36E9A694CACCD1DA47E9B38 /* SRS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A671D30298047E5D422DC19D /* SRS.swift */; };
+		C7345910BD70884A512E41EE /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8D61E92DA8CECAC94E1066 /* Repository.swift */; };
+		CA67667F72058DE316D93E24 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2421A5192CF02D31FF69966A /* SyncService.swift */; };
+		CD4E9CBFE4A70723551C8F23 /* Crypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DBB1BEC1611AF7958D2EB3B /* Crypto.swift */; };
 		CD4F83CCAB906B212B4CDD5C /* seed.json in Resources */ = {isa = PBXBuildFile; fileRef = 1233DDAA779566147DE9E39E /* seed.json */; };
+		CE86E57523FC97CC1A32A763 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DFC065F2E12B3ABE42DE897 /* ChatService.swift */; };
+		D1BD3E59CB360C7B7DE94C28 /* RemoteSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909D1762D13873BB394C78FA /* RemoteSync.swift */; };
+		D73B48AEA896A0CD1C6E5584 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3702EF7F27EDE8BA4BB59D3C /* Models.swift */; };
+		DD0065A7969570E75EB34038 /* seed.json in Resources */ = {isa = PBXBuildFile; fileRef = 1233DDAA779566147DE9E39E /* seed.json */; };
 		DD507154D70795700CF320A8 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40308591039F38BF35567F74 /* SidebarView.swift */; };
+		F66A180DEDA9D984C55B419C /* MacLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF8A7F99D246F3CC605143DD /* MacLibraryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		09BDDFEA3C4C92383F347380 /* PDFKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFKitView.swift; sourceTree = "<group>"; };
 		0DFC065F2E12B3ABE42DE897 /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
 		1233DDAA779566147DE9E39E /* seed.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = seed.json; sourceTree = "<group>"; };
+		1486F582DAA7F83FF4A86252 /* MacRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRootView.swift; sourceTree = "<group>"; };
 		15D004300A862F919759E300 /* DiscoverService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverService.swift; sourceTree = "<group>"; };
 		22FAE5615DFC5928A0C4D834 /* MarginaliaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarginaliaApp.swift; sourceTree = "<group>"; };
 		237806A1E8289092AA05FEC0 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		2421A5192CF02D31FF69966A /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
 		24BDE957928614B686945EA9 /* MarginaliaSpike.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MarginaliaSpike.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2975A13D81B68D7184B343BC /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		2D59D58314224C7D7DE446CB /* MacReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacReaderView.swift; sourceTree = "<group>"; };
 		3702EF7F27EDE8BA4BB59D3C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		40308591039F38BF35567F74 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		41904AB07077E72E453B9A4B /* MacSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebarView.swift; sourceTree = "<group>"; };
 		4E5946E712A57EF6609CAC7B /* PDFService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFService.swift; sourceTree = "<group>"; };
 		599261F2D87C291A8D97DF13 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5A4BAD6C536A68917A60C620 /* SecondaryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondaryViews.swift; sourceTree = "<group>"; };
@@ -62,14 +89,20 @@
 		79663593D4332C71005F07B6 /* LookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookupService.swift; sourceTree = "<group>"; };
 		7F8D61E92DA8CECAC94E1066 /* Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repository.swift; sourceTree = "<group>"; };
 		87C3F597FD45AE87D67FBF4D /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
+		909D1762D13873BB394C78FA /* RemoteSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSync.swift; sourceTree = "<group>"; };
 		9DBB1BEC1611AF7958D2EB3B /* Crypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
 		A2E3A32ED4256EC09DE2CFE1 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		A5C419A591A0CB8A7DEADA07 /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
 		A671D30298047E5D422DC19D /* SRS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRS.swift; sourceTree = "<group>"; };
+		AF8A7F99D246F3CC605143DD /* MacLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryView.swift; sourceTree = "<group>"; };
+		B0DCC03ADFB480A1E08388D3 /* MarginaliaMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MarginaliaMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BBB8F4C5D9450AE86F1B6CF0 /* AddPaperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPaperView.swift; sourceTree = "<group>"; };
+		C710B3C325C6FBAB04258977 /* MarginaliaMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarginaliaMacApp.swift; sourceTree = "<group>"; };
 		DCC249DF12E314ED4F5066B3 /* StudyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyViews.swift; sourceTree = "<group>"; };
+		DCFC9836B9A31E0D43A6FAED /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		DE4ACB08CE0C606C73B340DB /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E20EF10107ED20EA74681A04 /* sample.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = sample.pdf; sourceTree = "<group>"; };
+		E6F3883D074E5136C239FFD8 /* LatestFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatestFeed.swift; sourceTree = "<group>"; };
 		FC240C01F917382B9CD30095 /* GraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -96,6 +129,7 @@
 		5F385AE44CA1F55C69F250A4 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				B0DCC03ADFB480A1E08388D3 /* MarginaliaMac.app */,
 				24BDE957928614B686945EA9 /* MarginaliaSpike.app */,
 			);
 			name = Products;
@@ -108,6 +142,7 @@
 				9A25E5410BE988DF4C405130 /* Common */,
 				CCCEE796C4E0CAEDE68358E3 /* Data */,
 				BC2611A8907B371C9EC8FA1F /* Features */,
+				E1859EEBFAD8A8EE1419B0D0 /* macOS */,
 				C8DFAE8214B6A61A82F2B54F /* Models */,
 			);
 			path = Sources;
@@ -121,8 +156,10 @@
 				9DBB1BEC1611AF7958D2EB3B /* Crypto.swift */,
 				15D004300A862F919759E300 /* DiscoverService.swift */,
 				A5C419A591A0CB8A7DEADA07 /* FeedService.swift */,
+				E6F3883D074E5136C239FFD8 /* LatestFeed.swift */,
 				79663593D4332C71005F07B6 /* LookupService.swift */,
 				4E5946E712A57EF6609CAC7B /* PDFService.swift */,
+				909D1762D13873BB394C78FA /* RemoteSync.swift */,
 				A671D30298047E5D422DC19D /* SRS.swift */,
 				2421A5192CF02D31FF69966A /* SyncService.swift */,
 			);
@@ -166,6 +203,19 @@
 			path = Data;
 			sourceTree = "<group>";
 		};
+		E1859EEBFAD8A8EE1419B0D0 /* macOS */ = {
+			isa = PBXGroup;
+			children = (
+				AF8A7F99D246F3CC605143DD /* MacLibraryView.swift */,
+				2D59D58314224C7D7DE446CB /* MacReaderView.swift */,
+				1486F582DAA7F83FF4A86252 /* MacRootView.swift */,
+				DCFC9836B9A31E0D43A6FAED /* MacSettingsView.swift */,
+				41904AB07077E72E453B9A4B /* MacSidebarView.swift */,
+				C710B3C325C6FBAB04258977 /* MarginaliaMacApp.swift */,
+			);
+			path = macOS;
+			sourceTree = "<group>";
+		};
 		F76E25B74E216CCFA97ED65D = {
 			isa = PBXGroup;
 			children = (
@@ -178,6 +228,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		D7DF58971CDD84108BAF1132 /* MarginaliaMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4772EF239915EF622B062CE8 /* Build configuration list for PBXNativeTarget "MarginaliaMac" */;
+			buildPhases = (
+				807FE2D0EE6C2D6C8C51FCA6 /* Sources */,
+				344A31BB8A6FD7AEE5848FBC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MarginaliaMac;
+			packageProductDependencies = (
+			);
+			productName = MarginaliaMac;
+			productReference = B0DCC03ADFB480A1E08388D3 /* MarginaliaMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 		E9900B9888034BABC6CCAB0A /* MarginaliaSpike */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CF9CE28A7CCC6C7C46D48ED8 /* Build configuration list for PBXNativeTarget "MarginaliaSpike" */;
@@ -205,6 +273,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					D7DF58971CDD84108BAF1132 = {
+						DevelopmentTeam = XFHWLX5XD8;
+						ProvisioningStyle = Automatic;
+					};
 					E9900B9888034BABC6CCAB0A = {
 						DevelopmentTeam = XFHWLX5XD8;
 						ProvisioningStyle = Automatic;
@@ -225,6 +297,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				D7DF58971CDD84108BAF1132 /* MarginaliaMac */,
 				E9900B9888034BABC6CCAB0A /* MarginaliaSpike */,
 			);
 		};
@@ -241,9 +314,45 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		344A31BB8A6FD7AEE5848FBC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7CB35CF9B1EA862739A43E7E /* sample.pdf in Resources */,
+				DD0065A7969570E75EB34038 /* seed.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		807FE2D0EE6C2D6C8C51FCA6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				34700A18BE9EED971BF0723B /* AppModel.swift in Sources */,
+				CE86E57523FC97CC1A32A763 /* ChatService.swift in Sources */,
+				655CFB1FD09E7A698117B927 /* Citation.swift in Sources */,
+				CD4E9CBFE4A70723551C8F23 /* Crypto.swift in Sources */,
+				BE6624F379639EBEC87997B6 /* DiscoverService.swift in Sources */,
+				2A1C02A1DC00BDB2D9450FA1 /* FeedService.swift in Sources */,
+				590B254C69A50429B7F4D377 /* LatestFeed.swift in Sources */,
+				67162B489362D2EBCF836953 /* LookupService.swift in Sources */,
+				F66A180DEDA9D984C55B419C /* MacLibraryView.swift in Sources */,
+				9839A1A256774FA8F90353FB /* MacReaderView.swift in Sources */,
+				50645782821ADC374D27940E /* MacRootView.swift in Sources */,
+				16FE39B2D184C2940465556B /* MacSettingsView.swift in Sources */,
+				64622EAA9CDFFE0A17E1CC03 /* MacSidebarView.swift in Sources */,
+				98A1ADDA2B7CFC675B0A6619 /* MarginaliaMacApp.swift in Sources */,
+				D73B48AEA896A0CD1C6E5584 /* Models.swift in Sources */,
+				59D34E011561F607C9AC8D0E /* PDFService.swift in Sources */,
+				D1BD3E59CB360C7B7DE94C28 /* RemoteSync.swift in Sources */,
+				C7345910BD70884A512E41EE /* Repository.swift in Sources */,
+				C36E9A694CACCD1DA47E9B38 /* SRS.swift in Sources */,
+				CA67667F72058DE316D93E24 /* SyncService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DAB87A9B1B64B23FA9CB05CB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -260,6 +369,7 @@
 				358F2C2A3C035B8E1AF27E13 /* EditPaperView.swift in Sources */,
 				233EA8841DC650FE3A0C97E6 /* FeedService.swift in Sources */,
 				6DE8D1C705259A70FD58954E /* GraphView.swift in Sources */,
+				422371DDBB1C7D7832510E47 /* LatestFeed.swift in Sources */,
 				5F9239676CBE4885692EF0D3 /* LibraryView.swift in Sources */,
 				BFA54DC41105E1E8D94DC4B7 /* LookupService.swift in Sources */,
 				9DBF617491441F9AAC2C25A9 /* MarginaliaApp.swift in Sources */,
@@ -268,6 +378,7 @@
 				6F56602C92AC9102CA578EED /* PDFKitView.swift in Sources */,
 				5512CDCDF90AC59ED02BA5BC /* PDFService.swift in Sources */,
 				1C234D2C78EB1031CE734E8D /* ReaderView.swift in Sources */,
+				7C70CC351009CC9DB0C9E892 /* RemoteSync.swift in Sources */,
 				7CFC0135950ECBBEB2A6B006 /* Repository.swift in Sources */,
 				BFFD6319A22FF69F99F39263 /* SRS.swift in Sources */,
 				866DB87CE996CB1493791DE5 /* SecondaryViews.swift in Sources */,
@@ -302,6 +413,30 @@
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		2D4656B7BB581497A00EEC48 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XFHWLX5XD8;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Marginalia;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.marginalia.mac;
+				PRODUCT_NAME = Marginalia;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
@@ -351,12 +486,36 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		591167817BAFE175C9DCEA41 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XFHWLX5XD8;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Marginalia;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.marginalia.mac;
+				PRODUCT_NAME = Marginalia;
+				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -413,11 +572,11 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -451,6 +610,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		4772EF239915EF622B062CE8 /* Build configuration list for PBXNativeTarget "MarginaliaMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2D4656B7BB581497A00EEC48 /* Debug */,
+				591167817BAFE175C9DCEA41 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		58FAD4F93557FF9D08259B43 /* Build configuration list for PBXProject "MarginaliaSpike" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
