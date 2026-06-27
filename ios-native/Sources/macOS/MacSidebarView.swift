@@ -65,6 +65,20 @@ struct MacSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .top) {
+            HStack(spacing: 9) {
+                Image("Logo")
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 26, height: 26)
+                Text("Marginalia")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+        }
         .safeAreaInset(edge: .bottom) {
             Button { showNewCollection = true } label: {
                 Label("New Collection", systemImage: "plus").font(.callout)
