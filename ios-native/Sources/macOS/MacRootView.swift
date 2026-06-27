@@ -7,6 +7,7 @@ struct MacRootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        @Bindable var model = model
         NavigationSplitView {
             MacSidebarView()
                 .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 320)
@@ -24,6 +25,8 @@ struct MacRootView: View {
                 )
             }
         }
+        .preferredColorScheme(model.settings.theme == "dark" ? .dark : .light)
+        .sheet(isPresented: $model.presentAdd) { MacAddPaperView().environment(model) }
     }
 
     @ViewBuilder

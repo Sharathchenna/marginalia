@@ -16,6 +16,7 @@
 		16FE39B2D184C2940465556B /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCFC9836B9A31E0D43A6FAED /* MacSettingsView.swift */; };
 		190C6A2A48063E5FD87A0F8F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 599261F2D87C291A8D97DF13 /* Assets.xcassets */; };
 		1C234D2C78EB1031CE734E8D /* ReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6121F2F7CE0C53BDE35679AC /* ReaderView.swift */; };
+		1E78DEB2048BD8DB382FB684 /* RetractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC16C436539E7D353864DFF7 /* RetractionService.swift */; };
 		233EA8841DC650FE3A0C97E6 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C419A591A0CB8A7DEADA07 /* FeedService.swift */; };
 		26308D74DF8A4AFFB61DC3BF /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3702EF7F27EDE8BA4BB59D3C /* Models.swift */; };
 		2A1C02A1DC00BDB2D9450FA1 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C419A591A0CB8A7DEADA07 /* FeedService.swift */; };
@@ -50,15 +51,18 @@
 		7CFC0135950ECBBEB2A6B006 /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8D61E92DA8CECAC94E1066 /* Repository.swift */; };
 		8655B6F0160FE7A40BCFC4D4 /* MacFeedsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7090B7131AB5C59190CCAB47 /* MacFeedsView.swift */; };
 		866DB87CE996CB1493791DE5 /* SecondaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A4BAD6C536A68917A60C620 /* SecondaryViews.swift */; };
+		89BCE914FF5C9EDBB1498123 /* SearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C27BB75073669DAC72B29F7 /* SearchService.swift */; };
 		8A3400492F4EE217BBAF4740 /* StudyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC249DF12E314ED4F5066B3 /* StudyViews.swift */; };
 		8EDC291DB9FEA6B741D4F295 /* MacAddPaperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0B493644043C9B7CA6F1EA /* MacAddPaperView.swift */; };
 		9839A1A256774FA8F90353FB /* MacReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D59D58314224C7D7DE446CB /* MacReaderView.swift */; };
 		98A1ADDA2B7CFC675B0A6619 /* MarginaliaMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C710B3C325C6FBAB04258977 /* MarginaliaMacApp.swift */; };
 		9DBF617491441F9AAC2C25A9 /* MarginaliaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FAE5615DFC5928A0C4D834 /* MarginaliaApp.swift */; };
 		A0D764C90262DCB124430AEB /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2421A5192CF02D31FF69966A /* SyncService.swift */; };
+		A3F4A0B88C860A28132068FB /* SearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C27BB75073669DAC72B29F7 /* SearchService.swift */; };
 		AA4725120494DBD02B636D19 /* CiteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DA522C83928358233BA608 /* CiteService.swift */; };
 		AB07B24DC25EC444543B8A22 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2975A13D81B68D7184B343BC /* ChatView.swift */; };
 		B23F7201175CD36C4780CEA7 /* TtsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA7C6B71D8AB25B0E3D3CF8 /* TtsService.swift */; };
+		B3FF6D41D176A798A0FF5154 /* MacExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E091AB555396B454FAF681D /* MacExport.swift */; };
 		B4AC147AD4B16DD624EE31F8 /* sample.pdf in Resources */ = {isa = PBXBuildFile; fileRef = E20EF10107ED20EA74681A04 /* sample.pdf */; };
 		B8A03BEAA124955ACD8CBB9C /* DiscoverService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D004300A862F919759E300 /* DiscoverService.swift */; };
 		BE6624F379639EBEC87997B6 /* DiscoverService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D004300A862F919759E300 /* DiscoverService.swift */; };
@@ -77,6 +81,7 @@
 		DD507154D70795700CF320A8 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40308591039F38BF35567F74 /* SidebarView.swift */; };
 		F66A180DEDA9D984C55B419C /* MacLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF8A7F99D246F3CC605143DD /* MacLibraryView.swift */; };
 		F6A9CF255D6B9A4D2AEA40CE /* MacDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93515C86D0D986C933BBF996 /* MacDashboardView.swift */; };
+		F6BDF3B67CC51F2C7D3E2547 /* RetractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC16C436539E7D353864DFF7 /* RetractionService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -93,6 +98,7 @@
 		24BDE957928614B686945EA9 /* MarginaliaSpike.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MarginaliaSpike.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2975A13D81B68D7184B343BC /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		2BA7C6B71D8AB25B0E3D3CF8 /* TtsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TtsService.swift; sourceTree = "<group>"; };
+		2C27BB75073669DAC72B29F7 /* SearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchService.swift; sourceTree = "<group>"; };
 		2D59D58314224C7D7DE446CB /* MacReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacReaderView.swift; sourceTree = "<group>"; };
 		33DA522C83928358233BA608 /* CiteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CiteService.swift; sourceTree = "<group>"; };
 		3702EF7F27EDE8BA4BB59D3C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -113,6 +119,7 @@
 		79663593D4332C71005F07B6 /* LookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookupService.swift; sourceTree = "<group>"; };
 		7F8D61E92DA8CECAC94E1066 /* Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repository.swift; sourceTree = "<group>"; };
 		87C3F597FD45AE87D67FBF4D /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
+		8E091AB555396B454FAF681D /* MacExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacExport.swift; sourceTree = "<group>"; };
 		909D1762D13873BB394C78FA /* RemoteSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSync.swift; sourceTree = "<group>"; };
 		93515C86D0D986C933BBF996 /* MacDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardView.swift; sourceTree = "<group>"; };
 		9DBB1BEC1611AF7958D2EB3B /* Crypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
@@ -124,6 +131,7 @@
 		B0DCC03ADFB480A1E08388D3 /* MarginaliaMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MarginaliaMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B42B3D449842A0D7D382AC34 /* MacMarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMarkdownText.swift; sourceTree = "<group>"; };
 		BBB8F4C5D9450AE86F1B6CF0 /* AddPaperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPaperView.swift; sourceTree = "<group>"; };
+		BC16C436539E7D353864DFF7 /* RetractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetractionService.swift; sourceTree = "<group>"; };
 		BD0BC93202A06ED8787E3A8D /* MacCiteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCiteView.swift; sourceTree = "<group>"; };
 		C710B3C325C6FBAB04258977 /* MarginaliaMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarginaliaMacApp.swift; sourceTree = "<group>"; };
 		D5D9F1AB8C88A26BC4EA0B25 /* MacNotebookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNotebookView.swift; sourceTree = "<group>"; };
@@ -191,6 +199,8 @@
 				79663593D4332C71005F07B6 /* LookupService.swift */,
 				4E5946E712A57EF6609CAC7B /* PDFService.swift */,
 				909D1762D13873BB394C78FA /* RemoteSync.swift */,
+				BC16C436539E7D353864DFF7 /* RetractionService.swift */,
+				2C27BB75073669DAC72B29F7 /* SearchService.swift */,
 				A671D30298047E5D422DC19D /* SRS.swift */,
 				2421A5192CF02D31FF69966A /* SyncService.swift */,
 				2BA7C6B71D8AB25B0E3D3CF8 /* TtsService.swift */,
@@ -244,6 +254,7 @@
 				93515C86D0D986C933BBF996 /* MacDashboardView.swift */,
 				AE980489E0F03362B3A2BE42 /* MacDiscoverView.swift */,
 				5700F5E8130F7816A6D92DB7 /* MacEditPaperView.swift */,
+				8E091AB555396B454FAF681D /* MacExport.swift */,
 				7090B7131AB5C59190CCAB47 /* MacFeedsView.swift */,
 				5FBAD3170D9D17C5A0F6A8B6 /* MacGraphView.swift */,
 				AF8A7F99D246F3CC605143DD /* MacLibraryView.swift */,
@@ -389,6 +400,7 @@
 				F6A9CF255D6B9A4D2AEA40CE /* MacDashboardView.swift in Sources */,
 				D3250937B197508589252C0D /* MacDiscoverView.swift in Sources */,
 				4F5063F330E36FE8C9C4B8E9 /* MacEditPaperView.swift in Sources */,
+				B3FF6D41D176A798A0FF5154 /* MacExport.swift in Sources */,
 				8655B6F0160FE7A40BCFC4D4 /* MacFeedsView.swift in Sources */,
 				0EA107B233621336488D0F97 /* MacGraphView.swift in Sources */,
 				F66A180DEDA9D984C55B419C /* MacLibraryView.swift in Sources */,
@@ -405,7 +417,9 @@
 				59D34E011561F607C9AC8D0E /* PDFService.swift in Sources */,
 				D1BD3E59CB360C7B7DE94C28 /* RemoteSync.swift in Sources */,
 				C7345910BD70884A512E41EE /* Repository.swift in Sources */,
+				1E78DEB2048BD8DB382FB684 /* RetractionService.swift in Sources */,
 				C36E9A694CACCD1DA47E9B38 /* SRS.swift in Sources */,
+				A3F4A0B88C860A28132068FB /* SearchService.swift in Sources */,
 				CA67667F72058DE316D93E24 /* SyncService.swift in Sources */,
 				47E53147C859BE87E271ADB1 /* TtsService.swift in Sources */,
 			);
@@ -439,7 +453,9 @@
 				1C234D2C78EB1031CE734E8D /* ReaderView.swift in Sources */,
 				7C70CC351009CC9DB0C9E892 /* RemoteSync.swift in Sources */,
 				7CFC0135950ECBBEB2A6B006 /* Repository.swift in Sources */,
+				F6BDF3B67CC51F2C7D3E2547 /* RetractionService.swift in Sources */,
 				BFFD6319A22FF69F99F39263 /* SRS.swift in Sources */,
+				89BCE914FF5C9EDBB1498123 /* SearchService.swift in Sources */,
 				866DB87CE996CB1493791DE5 /* SecondaryViews.swift in Sources */,
 				0629C0B094FC67232F2CFCE4 /* SettingsView.swift in Sources */,
 				DD507154D70795700CF320A8 /* SidebarView.swift in Sources */,

@@ -15,7 +15,18 @@ struct MarginaliaMacApp: App {
         }
         .commands {
             SidebarCommands()
-            CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .newItem) {
+                Button("New Paper…") { model.presentAdd = true }
+                    .keyboardShortcut("n")
+            }
+            CommandGroup(after: .importExport) {
+                Button("Export Library as BibTeX…") {
+                    MacExport.save(MacExport.bibtex(model.papers), suggested: "library.bib")
+                }
+                Button("Export Library as RIS…") {
+                    MacExport.save(MacExport.ris(model.papers), suggested: "library.ris")
+                }
+            }
             CommandGroup(after: .sidebar) {
                 Button("Sync Now") { Task { await model.syncNow() } }
                     .keyboardShortcut("r", modifiers: [.command, .shift])

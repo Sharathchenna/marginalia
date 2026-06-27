@@ -54,6 +54,7 @@ struct MacReaderView: View {
         .toolbar { toolbarItems }
         .task(id: paper.id) {
             await resolvePDF()
+            await checkRetraction()
             if explainerBody == nil, aiConfigured { await generateExplainer() }
         }
         .sheet(isPresented: $showEdit) { MacEditPaperView(paperId: paper.id).environment(model) }
@@ -247,6 +248,15 @@ struct MacReaderView: View {
             }
             pdf.load(url: url, savedHighlights: p.hl, startPage: p.lastPage ?? 1)
             if pdf.pageCount > 0 { model.updatePaper(paper.id) { $0.pages = pdf.pageCount } }
+        }
+    }
+
+    private func checkRetraction() async {
+        guard !p.doi.isEmpty, p.doi != "—", p.retracted == nil, (p.retractionChecked ?? 0) <= 0 else { return }
+        let result = try? await RetractionService.check(doi: p.doi, apiUrl: model.settings.apiUrl, token: model.settings.apiToken)
+        model.updatePaper(paper.id) { pp in
+            if let r = result { pp.retracted = r }
+            pp.retractionChecked = AppModel.nowMs()
         }
     }
 

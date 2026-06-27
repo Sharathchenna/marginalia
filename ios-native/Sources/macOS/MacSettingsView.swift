@@ -4,6 +4,8 @@ import SwiftUI
 // search (Voyage), read-aloud voice/rate, appearance, citations, and sync.
 struct MacSettingsView: View {
     @Environment(AppModel.self) private var model
+    @State private var indexing = false
+    @State private var indexStatus: String?
 
     var body: some View {
         @Bindable var model = model
@@ -28,6 +30,15 @@ struct MacSettingsView: View {
                 if model.settings.embedProvider == "voyage" {
                     TextField("Embed model", text: $model.settings.embedModel)
                     SecureField("Voyage API key", text: $model.settings.voyageKey)
+                    HStack {
+                        Button(indexing ? "Indexing…" : "Build search index") { buildIndex() }
+                            .disabled(indexing || model.settings.voyageKey.isEmpty)
+                        if indexing { ProgressView().controlSize(.small) }
+                        Spacer()
+                        if let indexStatus { Text(indexStatus).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Text("Embeds your library on the server so the 🧠 search in the library uses meaning, not just keywords.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
 
@@ -76,5 +87,16 @@ struct MacSettingsView: View {
         }
         .formStyle(.grouped)
         .onChange(of: model.settings) { _, _ in model.persistSettings() }
+    }
+
+    private func buildIndex() {
+        indexing = true; indexStatus = nil
+        Task {
+            await SearchService.setVoyageKey(model.settings.voyageKey, apiUrl: model.settings.apiUrl, token: model.settings.apiToken)
+            let n = await SearchService.index(model.papers, apiUrl: model.settings.apiUrl, token: model.settings.apiToken)
+            let status = await SearchService.status(apiUrl: model.settings.apiUrl, token: model.settings.apiToken)
+            indexStatus = "Indexed \(n) · \(status?.embedded ?? 0) total"
+            indexing = false
+        }
     }
 }

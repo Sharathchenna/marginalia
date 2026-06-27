@@ -22,6 +22,8 @@ final class AppModel {
     var screen: Screen = .library
     var filter: String = "all"
     var selectedId: String?
+    /// macOS: drives the "New Paper" command's add sheet from the menu/toolbar.
+    var presentAdd = false
     var query: String = ""
     var sortKey: String = "added"   // added | year | title
     var loaded = false
