@@ -6,3 +6,5 @@ dist-ssr
 
 # Rust / Tauri
 src-tauri/target
+server-rs/target
+server-rs/data

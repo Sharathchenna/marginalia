@@ -21,6 +21,8 @@ export interface Paper {
   fav: boolean;
   added: string; // human label, e.g. "2d ago"
   addedTs: number; // sortable recency score
+  updatedTs?: number; // server-stamped change time (per-record sync)
+  deleted?: boolean; // tombstone (sync)
   abstract: string;
   notes: string;
   hl: Highlight[];

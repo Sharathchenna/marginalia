@@ -174,6 +174,25 @@ pub fn delete_paper(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Soft-delete for multi-device sync: keep a tombstone row (`deleted=true` +
+/// `updatedTs`) so the deletion propagates via `?since=`, but drop it from FTS +
+/// embeddings so it stops surfacing in search/similarity.
+pub fn soft_delete_paper(conn: &Connection, id: &str, updated_ts: i64) -> rusqlite::Result<()> {
+    let mut p = get_paper(conn, id)?.unwrap_or_else(|| json!({ "id": id }));
+    if let Some(obj) = p.as_object_mut() {
+        obj.insert("deleted".into(), Value::Bool(true));
+        obj.insert("updatedTs".into(), json!(updated_ts));
+    }
+    conn.execute(
+        "INSERT INTO papers(id, json, added_ts) VALUES(?1, ?2, 0)
+         ON CONFLICT(id) DO UPDATE SET json=excluded.json",
+        params![id, p.to_string()],
+    )?;
+    conn.execute("DELETE FROM papers_fts WHERE id = ?1", params![id])?;
+    conn.execute("DELETE FROM embeddings WHERE paper_id = ?1", params![id])?;
+    Ok(())
+}
+
 pub fn search(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Value>> {
     let mut stmt = conn.prepare(
         "SELECT p.json FROM papers_fts f JOIN papers p ON p.id = f.id

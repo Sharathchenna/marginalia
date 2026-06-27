@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Claude Agent SDK sidecar — chat about a paper. Spawned by the Tauri app per turn; streams JSON-lines events on stdout.",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.77"
+    "@anthropic-ai/claude-agent-sdk": "^0.1.77",
+    "edge-tts-universal": "^1.4.0"
   }
 }

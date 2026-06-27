@@ -11,6 +11,7 @@ import type {
   ViewMode,
 } from "./types";
 import { repo, type Settings } from "./lib/repo";
+import * as syncLib from "./lib/sync";
 import { invoke, isTauri, detectGlassPlatform } from "./lib/tauri";
 import {
   chooseLibraryFolder,
@@ -136,6 +137,22 @@ export function useStore() {
   const [voyageKey, setVoyageKeyState] = useState("");
   const [embedStatus, setEmbedStatus] = useState<EmbedStatus>({ embedded: 0, model: "", hasKey: false });
   const [indexing, setIndexing] = useState(false);
+  // Read aloud (text-to-speech).
+  const [ttsProvider, setTtsProviderState] = useState("edge");
+  const [ttsVoice, setTtsVoiceState] = useState("en-US-AriaNeural");
+  const [ttsRate, setTtsRateState] = useState(1.0);
+  // Self-hosted server sync.
+  const [apiUrl, setApiUrlState] = useState("");
+  const [apiToken, setApiTokenState] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const lastSyncTs = useRef(0);
+  const pendingDeletes = useRef<Set<string>>(new Set());
+  const collectionsDirty = useRef(false);
+  const syncTimer = useRef<number | null>(null);
+  const serverRef = useRef<{ base: string | null; token: string }>({ base: null, token: "" });
+  const papersRef = useRef<Paper[]>([]);
+  const collectionsRef = useRef<Collection[]>([]);
 
   // ----- transient UI state -----
   const [filter, setFilter] = useState<Filter>("all");
@@ -193,6 +210,12 @@ export function useStore() {
       if (typeof st.embedProvider === "string") setEmbedProviderState(st.embedProvider);
       if (typeof st.embedModel === "string") setEmbedModelState(st.embedModel);
       if (typeof st.voyageKey === "string") setVoyageKeyState(st.voyageKey);
+      if (typeof st.ttsProvider === "string") setTtsProviderState(st.ttsProvider);
+      if (typeof st.ttsVoice === "string") setTtsVoiceState(st.ttsVoice);
+      if (typeof st.ttsRate === "number") setTtsRateState(st.ttsRate);
+      if (typeof st.apiUrl === "string") setApiUrlState(st.apiUrl);
+      if (typeof st.apiToken === "string") setApiTokenState(st.apiToken);
+      if (typeof st.lastSyncTs === "number") lastSyncTs.current = st.lastSyncTs;
       void embeddingStatus().then(setEmbedStatus);
       if (ps.length && !ps.some((p) => p.id === "attention")) {
         setSelectedId(ps[0].id);
@@ -229,6 +252,85 @@ export function useStore() {
     },
     [r],
   );
+
+  // ---- self-hosted server sync (per-record LWW against /v1/sync) ----
+  useEffect(() => {
+    serverRef.current = { base: syncLib.serverBase(apiUrl), token: apiToken };
+  }, [apiUrl, apiToken]);
+  useEffect(() => {
+    papersRef.current = papers;
+  }, [papers]);
+  useEffect(() => {
+    collectionsRef.current = collections;
+  }, [collections]);
+
+  const syncNow = useCallback(async () => {
+    const { base, token } = serverRef.current;
+    if (!base) return;
+    setSyncing(true);
+    setSyncStatus("Syncing…");
+    const since = lastSyncTs.current;
+    const pushAll = since <= 0; // first sync seeds the server with the whole library
+    try {
+      for (const p of papersRef.current) {
+        if (pushAll || (p.updatedTs ?? 0) > since) {
+          try {
+            await syncLib.pushPaper(base, token, p);
+          } catch {
+            /* retry next sync */
+          }
+        }
+      }
+      for (const id of [...pendingDeletes.current]) {
+        try {
+          await syncLib.deletePaper(base, token, id);
+        } catch {
+          /* retry */
+        }
+      }
+      if (collectionsDirty.current || pushAll) {
+        try {
+          await syncLib.putCollections(base, token, collectionsRef.current);
+        } catch {
+          /* retry */
+        }
+      }
+      const pulled = await syncLib.pull(base, token, since);
+      const merged = syncLib.mergePapers(papersRef.current, pulled.papers);
+      setPapers(merged);
+      void r.replacePapers(merged);
+      if (pulled.collections && (pulled.collectionsTs ?? 0) > since) {
+        setCollections(pulled.collections);
+        void r.saveCollections(pulled.collections);
+      }
+      pendingDeletes.current.clear();
+      collectionsDirty.current = false;
+      lastSyncTs.current = pulled.serverTs;
+      void r.saveSettings({ lastSyncTs: pulled.serverTs });
+      setSyncStatus(`Synced ${merged.length} items`);
+    } catch (e) {
+      setSyncStatus(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [r]);
+
+  const scheduleSync = useCallback(() => {
+    if (!serverRef.current.base) return;
+    if (syncTimer.current) window.clearTimeout(syncTimer.current);
+    syncTimer.current = window.setTimeout(() => void syncNow(), 2000) as unknown as number;
+  }, [syncNow]);
+
+  // Sync on launch + every 60s when a server is configured.
+  useEffect(() => {
+    if (!loaded) return;
+    if (serverRef.current.base) void syncNow();
+    const t = window.setInterval(() => {
+      if (serverRef.current.base) void syncNow();
+    }, 60000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
 
   const showToast = useCallback((msg: string) => setToast(msg), []);
   useEffect(() => {
@@ -311,10 +413,12 @@ export function useStore() {
   // ----- mutations (write-through to the repo) -----
   const patchPaper = useCallback(
     (id: string, patch: Partial<Paper>) => {
-      setPapers((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-      void r.updatePaper(id, patch);
+      const stamped = { ...patch, updatedTs: Date.now() };
+      setPapers((ps) => ps.map((p) => (p.id === id ? { ...p, ...stamped } : p)));
+      void r.updatePaper(id, stamped);
+      scheduleSync();
     },
-    [r],
+    [r, scheduleSync],
   );
   const toggleStar = useCallback(
     (id: string) => {
@@ -336,10 +440,12 @@ export function useStore() {
 
   const addPaper = useCallback(
     (p: Paper) => {
-      setPapers((ps) => [p, ...ps.filter((x) => x.id !== p.id)]);
-      void r.addPaper(p);
+      const stamped = { ...p, updatedTs: Date.now() };
+      setPapers((ps) => [stamped, ...ps.filter((x) => x.id !== p.id)]);
+      void r.addPaper(stamped);
+      scheduleSync();
     },
-    [r],
+    [r, scheduleSync],
   );
 
   // Scan a folder (recursively) for PDFs and add any not already in the library.
@@ -378,8 +484,10 @@ export function useStore() {
     (next: Collection[]) => {
       setCollections(next);
       void r.saveCollections(next);
+      collectionsDirty.current = true;
+      scheduleSync();
     },
-    [r],
+    [r, scheduleSync],
   );
 
   const pdfPathFor = useCallback(
@@ -415,6 +523,14 @@ export function useStore() {
     voyageKey,
     embedStatus,
     indexing,
+    ttsProvider,
+    ttsVoice,
+    ttsRate,
+    apiUrl,
+    apiToken,
+    syncing,
+    syncStatus,
+    syncNow,
     filter,
     selectedId,
     sel,
@@ -463,6 +579,30 @@ export function useStore() {
       setModelState(m);
       setAgentModel(m);
       persistSettings({ model: m });
+    },
+
+    // ---- read aloud (text-to-speech) ----
+    setTtsProvider: (p: string) => {
+      setTtsProviderState(p);
+      persistSettings({ ttsProvider: p });
+    },
+    setTtsVoice: (v: string) => {
+      setTtsVoiceState(v);
+      persistSettings({ ttsVoice: v });
+    },
+    setTtsRate: (r: number) => {
+      setTtsRateState(r);
+      persistSettings({ ttsRate: r });
+    },
+
+    // ---- self-hosted server sync ----
+    setApiUrl: (u: string) => {
+      setApiUrlState(u);
+      persistSettings({ apiUrl: u });
+    },
+    setApiToken: (t: string) => {
+      setApiTokenState(t);
+      persistSettings({ apiToken: t });
     },
 
     // ---- semantic search (Voyage embeddings) ----
@@ -686,6 +826,8 @@ export function useStore() {
           ),
       );
       void r.deletePaper(id);
+      pendingDeletes.current.add(id);
+      scheduleSync();
       papers.forEach((p) => {
         if (p.id !== id && p.related?.includes(id)) {
           void r.updatePaper(p.id, { related: p.related.filter((x) => x !== id) });

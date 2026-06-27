@@ -21,6 +21,17 @@ export interface Settings {
   embedProvider?: string;
   embedModel?: string;
   voyageKey?: string;
+  /** Read aloud: provider ("edge" = MS Edge neural | "system" = OS voice | "off"). */
+  ttsProvider?: string;
+  /** Edge voice short-name, e.g. "en-US-AriaNeural". */
+  ttsVoice?: string;
+  /** Speaking rate multiplier (1 = normal). */
+  ttsRate?: number;
+  /** Self-hosted server sync: base URL (AI backend host) + bearer token. */
+  apiUrl?: string;
+  apiToken?: string;
+  /** Last successful server sync (server clock, ms). */
+  lastSyncTs?: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -33,6 +44,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // Browser dev preview skips onboarding; the native app sets this false so the
   // folder picker shows on first run.
   librarySet: true,
+  ttsProvider: "edge",
+  ttsVoice: "en-US-AriaNeural",
+  ttsRate: 1.0,
 };
 
 // All app data access goes through this interface. The localStorage and Tauri

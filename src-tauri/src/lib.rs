@@ -5,6 +5,7 @@ mod agent;
 mod db;
 mod embeddings;
 mod metadata;
+mod tts;
 
 use std::sync::Mutex;
 
@@ -33,7 +34,10 @@ fn default_settings() -> Value {
         "model": "",
         "embedProvider": "off",
         "embedModel": "voyage-3.5-lite",
-        "voyageKey": ""
+        "voyageKey": "",
+        "ttsProvider": "edge",
+        "ttsVoice": "en-US-AriaNeural",
+        "ttsRate": 1.0
     })
 }
 
@@ -483,7 +487,9 @@ pub fn run() {
             embed_papers,
             semantic_search,
             similar_papers,
-            agent::ai_chat
+            agent::ai_chat,
+            tts::tts_speak,
+            tts::tts_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Marginalia");

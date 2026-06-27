@@ -10,6 +10,7 @@ import {
   destToPage,
   extractFullText,
   getOutline,
+  getPageText,
   loadPdfSource,
   paintHighlights,
   renderLinkLayer,
@@ -20,6 +21,7 @@ import {
 } from "../lib/pdf";
 import { resolvePdf } from "../lib/library";
 import { invoke, isTauri } from "../lib/tauri";
+import { TtsController, type TtsState, type TtsWord } from "../lib/tts";
 import { ChatPanel } from "./ChatPanel";
 import { AnnPanelIcon, ChevronLeftIcon, SearchIcon, StickyIcon } from "../icons";
 
@@ -70,6 +72,20 @@ export function Reader({ store: s }: { store: Store }) {
   const [rightW, setRightW] = useState(() => readW("marg.rightW", RIGHT_DEFAULT, RIGHT_MIN, RIGHT_MAX));
   const scrollRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+
+  // read-aloud (text-to-speech)
+  const [ttsState, setTtsState] = useState<TtsState>("idle");
+  const [caption, setCaption] = useState<{ text: string; words: TtsWord[] }>({ text: "", words: [] });
+  const [wordIdx, setWordIdx] = useState(-1);
+  const ttsRef = useRef<TtsController | null>(null);
+  if (!ttsRef.current) {
+    ttsRef.current = new TtsController({
+      onState: setTtsState,
+      onCaption: (text, words) => setCaption({ text, words }),
+      onWord: setWordIdx,
+      onError: (m) => s.showToast(m),
+    });
+  }
 
   // Drag a panel edge to resize; persist the final width.
   const startResize = useCallback(
@@ -142,6 +158,35 @@ export function Reader({ store: s }: { store: Store }) {
     const h = el.clientHeight - 64;
     setZoom(+((h * aspect) / BASE_WIDTH).toFixed(2));
   }, [aspect]);
+
+  // Read aloud: speak from the current page, then auto-advance through the
+  // document (turning pages as it goes). Toggling pauses/resumes.
+  const onToggleTts = useCallback(() => {
+    const ctl = ttsRef.current;
+    if (!ctl) return;
+    const st = ctl.getState();
+    if (st === "playing") return ctl.pause();
+    if (st === "paused") return ctl.resume();
+    if (!pdf) return;
+    const cfg = { provider: s.ttsProvider, voice: s.ttsVoice, rate: s.ttsRate };
+    let cursor = page;
+    void getPageText(pdf, cursor).then((text) => {
+      ctl.start(text, cfg, async () => {
+        if (cursor + 1 > numPages) return null;
+        cursor += 1;
+        goToPage(cursor);
+        return getPageText(pdf, cursor);
+      });
+    });
+  }, [pdf, page, numPages, goToPage, s.ttsProvider, s.ttsVoice, s.ttsRate]);
+
+  // Live speed changes apply to upcoming speech.
+  useEffect(() => {
+    ttsRef.current?.setRate(s.ttsRate);
+  }, [s.ttsRate]);
+
+  // Stop speech when the document changes or the reader unmounts.
+  useEffect(() => () => ttsRef.current?.stop(), [paperId]);
 
   // load document; resume at last page; load outline
   useEffect(() => {
@@ -376,6 +421,15 @@ export function Reader({ store: s }: { store: Store }) {
           </div>
           <button
             className="ann-toggle"
+            data-active={ttsState !== "idle"}
+            onClick={onToggleTts}
+            disabled={!pdf || s.ttsProvider === "off"}
+            title="Read aloud"
+          >
+            {ttsState === "loading" ? <span className="spinner" /> : ttsState === "playing" ? "⏸" : "🔊"}
+          </button>
+          <button
+            className="ann-toggle"
             onClick={() => setPdfTheme((t) => THEMES[(THEMES.indexOf(t) + 1) % THEMES.length])}
             title={`Reading theme: ${pdfTheme}`}
           >
@@ -476,6 +530,29 @@ export function Reader({ store: s }: { store: Store }) {
             </div>
           )}
         </div>
+
+        {/* read-aloud caption bar: "now reading" with current-word highlight */}
+        {ttsState !== "idle" && (
+          <div className="tts-bar">
+            <button className="tts-ctl" onClick={onToggleTts} title={ttsState === "playing" ? "Pause" : "Play"}>
+              {ttsState === "loading" ? <span className="spinner" /> : ttsState === "playing" ? "⏸" : "▶"}
+            </button>
+            <button className="tts-ctl" onClick={() => ttsRef.current?.stop()} title="Stop">
+              ⏹
+            </button>
+            <div className="tts-caption">
+              {caption.text ? (
+                caption.text.split(" ").map((w, i) => (
+                  <span key={i} className={i === wordIdx ? "tts-word on" : "tts-word"}>
+                    {w}{" "}
+                  </span>
+                ))
+              ) : (
+                <span className="tts-prep">Preparing audio…</span>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* selection popover */}

@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// Find a usable `node` binary. A GUI app launched from Finder has a minimal
 /// PATH, so fall back to common install locations.
-fn find_node() -> Option<String> {
+pub(crate) fn find_node() -> Option<String> {
     let candidates = [
         "/opt/homebrew/bin/node",
         "/usr/local/bin/node",
@@ -30,36 +30,31 @@ fn find_node() -> Option<String> {
     None
 }
 
-/// Locate the sidecar script: bundled resource first, then the compiled-in
-/// project path (works for a locally-built personal app).
-fn resolve_sidecar(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
+/// Locate a sidecar script by file name (e.g. "agent.mjs", "tts.mjs"): bundled
+/// resource first, then the compiled-in project path (works for a locally-built
+/// personal app). Returns (sidecar_dir, script_path).
+pub(crate) fn resolve_sidecar(app: &AppHandle, script: &str) -> Option<(PathBuf, PathBuf)> {
     if let Ok(p) = app
         .path()
-        .resolve("sidecar/agent.mjs", tauri::path::BaseDirectory::Resource)
+        .resolve(format!("sidecar/{script}"), tauri::path::BaseDirectory::Resource)
     {
         if p.exists() {
             return Some((p.parent()?.to_path_buf(), p));
         }
     }
-    let dev = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/sidecar/agent.mjs"));
+    let dev = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/sidecar")).join(script);
     if dev.exists() {
         return Some((dev.parent()?.to_path_buf(), dev));
     }
     None
 }
 
-#[tauri::command]
-pub fn ai_chat(app: AppHandle, request_id: String, payload: Value) -> Result<(), String> {
-    let node = find_node().ok_or(
-        "Node.js was not found. Install Node 18+ (e.g. `brew install node`) to use AI chat.",
-    )?;
-    let (dir, script) = resolve_sidecar(&app).ok_or("Agent sidecar not found.")?;
-
-    // A Finder-launched app has a minimal PATH. Prepend node's own directory and
-    // the common install dirs so the sidecar — and any `node` the Agent SDK spawns
-    // beneath it — resolve reliably (fixes intermittent "spawn node ENOENT").
+/// Build a PATH that includes node's own directory plus the common install dirs.
+/// A Finder-launched app has a minimal PATH; this fixes intermittent
+/// "spawn node ENOENT" for the sidecar and anything it spawns beneath it.
+pub(crate) fn build_path_env(node: &str) -> String {
     let mut path_dirs: Vec<String> = Vec::new();
-    if let Some(node_dir) = std::path::Path::new(&node).parent() {
+    if let Some(node_dir) = std::path::Path::new(node).parent() {
         path_dirs.push(node_dir.to_string_lossy().to_string());
     }
     for d in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
@@ -68,7 +63,16 @@ pub fn ai_chat(app: AppHandle, request_id: String, payload: Value) -> Result<(),
     if let Ok(existing) = std::env::var("PATH") {
         path_dirs.push(existing);
     }
-    let path_env = path_dirs.join(":");
+    path_dirs.join(":")
+}
+
+#[tauri::command]
+pub fn ai_chat(app: AppHandle, request_id: String, payload: Value) -> Result<(), String> {
+    let node = find_node().ok_or(
+        "Node.js was not found. Install Node 18+ (e.g. `brew install node`) to use AI chat.",
+    )?;
+    let (dir, script) = resolve_sidecar(&app, "agent.mjs").ok_or("Agent sidecar not found.")?;
+    let path_env = build_path_env(&node);
 
     let mut child = Command::new(&node)
         .arg(&script)
