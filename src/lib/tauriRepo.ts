@@ -1,4 +1,4 @@
-import type { Collection, Paper } from "../types";
+import type { Collection, Feed, Paper } from "../types";
 import { invoke } from "./tauri";
 import type { Repository, Settings } from "./repo";
 
@@ -25,6 +25,12 @@ export class TauriRepository implements Repository {
   }
   saveCollections(collections: Collection[]): Promise<void> {
     return invoke<void>("save_collections", { collections });
+  }
+  listFeeds(): Promise<Feed[]> {
+    return invoke<Feed[]>("list_feeds");
+  }
+  saveFeeds(feeds: Feed[]): Promise<void> {
+    return invoke<void>("save_feeds", { feeds });
   }
   getSettings(): Promise<Settings> {
     return invoke<Settings>("get_settings");

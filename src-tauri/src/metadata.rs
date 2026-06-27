@@ -340,6 +340,46 @@ pub fn fetch_webpage(url: &str) -> Result<Value, String> {
     }))
 }
 
+// Fetch an RSS/Atom feed (or a page to sniff for one) with a conditional GET, so
+// repeat polls are cheap when nothing changed. Returns
+// `{ status, body, etag, lastModified }`; a 304 yields an empty body. Never errors
+// on a non-2xx status (the caller inspects `status`) — only on transport failure.
+pub fn fetch_feed(url: &str, etag: &str, last_modified: &str) -> Result<Value, String> {
+    let url = url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Not a web URL".into());
+    }
+    let mut req = http_client()?.get(url);
+    if !etag.is_empty() {
+        req = req.header("If-None-Match", etag);
+    }
+    if !last_modified.is_empty() {
+        req = req.header("If-Modified-Since", last_modified);
+    }
+    let resp = req.send().map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let header = |name: &str| {
+        resp.headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string()
+    };
+    let etag_out = header("etag");
+    let lm_out = header("last-modified");
+    let body = if status == 304 {
+        String::new()
+    } else {
+        resp.text().map_err(|e| e.to_string())?
+    };
+    Ok(json!({
+        "status": status,
+        "body": body,
+        "etag": etag_out,
+        "lastModified": lm_out,
+    }))
+}
+
 // Find a <meta> tag referencing `prop` (as name/property) and return its content.
 fn meta_content(html: &str, prop: &str) -> Option<String> {
     let lower = html.to_lowercase();

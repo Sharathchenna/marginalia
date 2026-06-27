@@ -1,4 +1,4 @@
-import type { Collection, Paper } from "../types";
+import type { Collection, Feed, Paper } from "../types";
 import type { CiteStyle, Density, Theme, ViewMode } from "../types";
 import { isTauri } from "./tauri";
 import { LocalRepository } from "./localRepo";
@@ -27,6 +27,15 @@ export interface Settings {
   webdavUrl?: string;
   webdavUser?: string;
   webdavPass?: string;
+  /** Passphrase for end-to-end-encrypting the sync snapshot (never leaves device). */
+  syncPassphrase?: string;
+  /** Optional self-hosted AI backend (see server/) — required for AI on iOS/web. */
+  apiUrl?: string;
+  apiToken?: string;
+  /** Auto-sync on this device: pull on launch, push on backgrounding (opt-in). */
+  syncAuto?: boolean;
+  /** Epoch-ms of the snapshot we last pushed/pulled — guards redundant auto-pulls. */
+  lastSyncTs?: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -52,6 +61,8 @@ export interface Repository {
   deletePaper(id: string): Promise<void>;
   listCollections(): Promise<Collection[]>;
   saveCollections(collections: Collection[]): Promise<void>;
+  listFeeds(): Promise<Feed[]>;
+  saveFeeds(feeds: Feed[]): Promise<void>;
   getSettings(): Promise<Settings>;
   saveSettings(patch: Partial<Settings>): Promise<void>;
 }

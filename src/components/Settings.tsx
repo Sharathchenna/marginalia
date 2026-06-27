@@ -45,6 +45,7 @@ function WebdavSync({ store: s }: { store: Store }) {
   const [url, setUrl] = useState(s.webdavUrl);
   const [user, setUser] = useState(s.webdavUser);
   const [pass, setPass] = useState(s.webdavPass);
+  const [phrase, setPhrase] = useState(s.syncPassphrase);
   const save = () => s.setWebdav(url.trim(), user.trim(), pass);
   return (
     <div>
@@ -81,20 +82,154 @@ function WebdavSync({ store: s }: { store: Store }) {
           onBlur={save}
         />
       </div>
+      <div style={{ marginTop: 12 }}>
+        <h3 style={{ marginBottom: 2 }}>End-to-end encryption</h3>
+        <p className="desc">
+          Set a passphrase to encrypt your library on this device <em>before</em> it's uploaded —
+          the server only ever sees ciphertext. Use the same passphrase on every device. If you
+          lose it, the synced copy can't be recovered.
+        </p>
+        <input
+          className="id-input"
+          type="password"
+          placeholder="Sync passphrase (leave blank to sync unencrypted)"
+          value={phrase}
+          onChange={(e) => setPhrase(e.target.value)}
+          onBlur={() => s.setSyncPassphrase(phrase)}
+        />
+      </div>
       <div style={{ display: "flex", gap: 9, marginTop: 10, alignItems: "center" }}>
-        <button className="mini-btn" disabled={s.syncing || !url.trim()} onClick={() => { save(); void s.syncToWebdav(); }}>
+        <button className="mini-btn" disabled={s.syncing || !url.trim()} onClick={() => { save(); s.setSyncPassphrase(phrase); void s.syncToWebdav(); }}>
           {s.syncing ? <span className="spinner" /> : "↑"} Push to server
         </button>
-        <button className="mini-btn" disabled={s.syncing || !url.trim()} onClick={() => { save(); void s.syncFromWebdav(); }}>
+        <button className="mini-btn" disabled={s.syncing || !url.trim()} onClick={() => { save(); s.setSyncPassphrase(phrase); void s.syncFromWebdav(); }}>
           {s.syncing ? <span className="spinner" /> : "↓"} Pull from server
         </button>
+        {phrase.trim() && <span className="desc" style={{ margin: 0, color: "var(--green)" }}>🔒 encrypted</span>}
       </div>
+      <div style={{ marginTop: 12 }}>
+        <h3 style={{ marginBottom: 2 }}>Auto-sync on this device</h3>
+        <p className="desc">
+          Pull on launch and push when the app is backgrounded. Best on a companion device
+          (e.g. your phone). Uses last-writer-wins — edit on one device at a time to avoid
+          overwrites.
+        </p>
+        <div className="seg-group">
+          <button className="seg-pill" data-active={s.syncAuto} onClick={() => s.setSyncAuto(true)}>On</button>
+          <button className="seg-pill" data-active={!s.syncAuto} onClick={() => s.setSyncAuto(false)}>Off</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Blog-feed subscriptions (RSS/Atom): add by URL, list, OPML import/export.
+function FeedsManager({ store: s }: { store: Store }) {
+  const [url, setUrl] = useState("");
+  const opmlRef = useRef<HTMLInputElement>(null);
+  const subscribe = () => {
+    const u = url.trim();
+    if (!u) return;
+    void s.subscribeFeed(u);
+    setUrl("");
+  };
+  return (
+    <div>
+      <h3>Blog feeds (RSS)</h3>
+      <p className="desc">
+        Subscribe to blogs by their site or feed URL — Marginalia checks for new posts every
+        15&nbsp;minutes and files them as readable articles.
+        {!isTauri() && " Feed fetching runs in the desktop app."}
+      </p>
+      <div style={{ display: "flex", gap: 9 }}>
+        <input
+          className="id-input"
+          style={{ flex: 1 }}
+          placeholder="https://example.com  or  https://example.com/feed.xml"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") subscribe();
+          }}
+        />
+        <button className="mini-btn" onClick={subscribe}>Subscribe</button>
+      </div>
+      <div className="watch-list" style={{ marginTop: 9 }}>
+        {s.feeds.map((f) => (
+          <div key={f.id} className="watch-item">
+            <span className="dot" style={f.lastError ? { background: "var(--danger)" } : undefined} />
+            <span className="path" title={f.url}>
+              {f.title}
+              {f.folder ? `  ·  ${f.folder}` : ""}
+              {(s.feedUnread[f.id] ?? 0) > 0 ? `  ·  ${s.feedUnread[f.id]} unread` : ""}
+            </span>
+            <span className="more" title="Unsubscribe" onClick={() => s.removeFeed(f.id)}>×</span>
+          </div>
+        ))}
+        {s.feeds.length === 0 && (
+          <span className="desc" style={{ margin: 0 }}>No feeds yet.</span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 9, marginTop: 10, flexWrap: "wrap" }}>
+        <button className="mini-btn" disabled={s.feeds.length === 0} onClick={() => void s.refreshAllFeeds()}>
+          ↻ Refresh all
+        </button>
+        <button className="mini-btn" disabled={s.feeds.length === 0} onClick={s.exportFeedsOPML}>
+          Export OPML
+        </button>
+        <button className="mini-btn" onClick={() => opmlRef.current?.click()}>Import OPML…</button>
+        <input
+          ref={opmlRef}
+          type="file"
+          accept=".opml,.xml,application/xml,text/xml"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void f.text().then((t) => s.importFeedsOPML(t));
+            e.target.value = "";
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Self-hosted AI backend — required for AI on iOS/web (no local Node sidecar).
+function AiBackend({ store: s }: { store: Store }) {
+  const [url, setUrl] = useState(s.apiUrl);
+  const [token, setToken] = useState(s.apiToken);
+  const save = () => s.setAiBackend(url, token);
+  return (
+    <div>
+      <h3>AI backend (optional)</h3>
+      <p className="desc">
+        Point at a self-hosted Marginalia AI server (see <span className="mono">server/</span>) to
+        enable chat / summarize / auto-tag on this device. Required on iOS and the web build, where
+        there's no local AI process. Your API key lives on the server, never on the device.
+      </p>
+      <input
+        className="id-input"
+        placeholder="https://ai.example.com"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        onBlur={save}
+      />
+      <input
+        className="id-input"
+        style={{ marginTop: 9 }}
+        type="password"
+        placeholder="Bearer token (optional)"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        onBlur={save}
+      />
     </div>
   );
 }
 
 export function Settings({ store: s }: { store: Store }) {
   const restoreRef = useRef<HTMLInputElement>(null);
+  const pocketRef = useRef<HTMLInputElement>(null);
   return (
     <main className="page-scroll">
       <div className="page-inner settings">
@@ -129,8 +264,11 @@ export function Settings({ store: s }: { store: Store }) {
               <button
                 className="watch-add"
                 onClick={() => {
-                  const next = window.prompt("Folder to watch", "~/Downloads");
-                  if (next) s.addWatchFolder(next);
+                  void s
+                    .requestPrompt({ title: "Folder to watch", value: "~/Downloads", confirmLabel: "Add" })
+                    .then((next) => {
+                      if (next && next.trim()) s.addWatchFolder(next);
+                    });
                 }}
               >
                 + Add folder…
@@ -157,6 +295,10 @@ export function Settings({ store: s }: { store: Store }) {
               />
             </div>
           )}
+
+          <FeedsManager store={s} />
+
+          <AiBackend store={s} />
 
           <div>
             <h3>Appearance</h3>
@@ -289,6 +431,27 @@ export function Settings({ store: s }: { store: Store }) {
               <button className="mini-btn" onClick={s.exportLibraryMarkdown}>
                 Export to Obsidian (Markdown)
               </button>
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <h3 style={{ marginBottom: 2 }}>Import from Pocket</h3>
+              <p className="desc">
+                Pocket shut down in 2025 — import your <span className="mono">ril_export.html</span> to
+                bring your saves in as bookmarks.
+              </p>
+              <button className="mini-btn" onClick={() => pocketRef.current?.click()}>
+                Import Pocket export…
+              </button>
+              <input
+                ref={pocketRef}
+                type="file"
+                accept=".html,text/html"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void f.text().then((t) => s.importPocket(t));
+                  e.target.value = "";
+                }}
+              />
             </div>
           </div>
 

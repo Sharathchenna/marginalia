@@ -74,6 +74,11 @@ function buildSystemPrompt(paper, pdfPath) {
         `The original PDF is also at ${pdfPath}; only use the Read tool if you need figures,`,
         "tables, or layout the extracted text doesn't capture.",
       );
+    } else {
+      lines.push(
+        "You have no tools and cannot read files — write your answer directly and immediately",
+        "from the text below; never announce that you are going to read the paper.",
+      );
     }
   } else if (pdfPath) {
     lines.push(
@@ -84,7 +89,11 @@ function buildSystemPrompt(paper, pdfPath) {
     );
   } else {
     lines.push(
-      "If something isn't covered by the metadata/abstract below, say so rather than inventing details.",
+      "You have NO tools and cannot read files, open the PDF, or look anything up — the metadata",
+      "and abstract below are everything you have. Write your answer directly and immediately from",
+      "them. NEVER say you will read the paper or need to look something up. If the abstract doesn't",
+      "cover something the question asks for, give the best answer you can from what's here and",
+      "briefly note what isn't available — do not stall or promise to read more.",
     );
   }
   lines.push("", "=== PAPER ===", meta || "(no metadata available)");
@@ -163,7 +172,9 @@ async function main() {
     allowedTools: pdfPath ? ["Read"] : [],
     permissionMode: "dontAsk",
     settingSources: [], // don't pull in project CLAUDE.md / settings
-    maxTurns: pdfPath ? 6 : 1, // allow a read → answer loop
+    // With a PDF: allow a read→answer loop. Without tools: 2 so a stray lead-in
+    // turn ("I'll read the paper…") can't truncate the actual answer.
+    maxTurns: pdfPath ? 6 : 2,
     // Stream raw deltas so the UI can show tokens, thinking, and tool use live.
     includePartialMessages: true,
   };

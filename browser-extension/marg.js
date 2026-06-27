@@ -77,6 +77,18 @@ async function margClip(data) {
   return true;
 }
 
+// Subscribe to a blog/RSS feed. The desktop app resolves the feed from either a
+// site URL (it discovers the <link rel=alternate>) or a direct feed URL.
+async function margSubscribe(url) {
+  const port = await margEnsurePort();
+  if (!port) throw new Error("Couldn't reach Marginalia — opening it now, try again in a moment.");
+  const r = await fetch(`http://127.0.0.1:${port}/subscribe?u=${encodeURIComponent(url)}`, {
+    headers: MARG_HEADERS,
+  });
+  if (!r.ok) throw new Error(`Subscribe failed (${r.status})`);
+  return true;
+}
+
 // Resolve an entry to a directly downloadable PDF URL, or null.
 function margPdfUrl(entry) {
   if (entry.type === "pdf") return entry.url;

@@ -662,11 +662,15 @@ kbd {
 }
 .detail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
 }
 .btn-open {
-  flex: 1;
+  /* Primary action: take the whole first row, with secondary buttons wrapping
+     below — keeps articles (Read · Open original · Ask AI · Cite · Archive) from
+     overflowing the narrow detail panel. */
+  flex: 1 1 100%;
   height: 34px;
   border: none;
   background: var(--accent);
@@ -681,6 +685,7 @@ kbd {
   background: var(--accent-hover);
 }
 .btn-cite {
+  flex: 0 1 auto;
   height: 34px;
   padding: 0 13px;
   border: 1px solid var(--border-2);
@@ -689,6 +694,7 @@ kbd {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 .btn-cite:hover {
@@ -3090,4 +3096,357 @@ textarea.editable-input {
 .progress-label {
   font-size: 11.5px;
   color: var(--text-3);
+}
+
+/* ---------- bookmark manager + blog reader ---------- */
+
+/* Site favicon used in article rows / cards / the reader masthead. */
+.row-favicon {
+  flex: none;
+  border-radius: 3px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+.row-favicon-fallback {
+  display: inline-grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Sidebar feed rows. */
+.nav-feed {
+  padding-left: 12px;
+}
+.feed-favicon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 3px;
+  object-fit: contain;
+}
+.feed-favicon-fallback {
+  display: inline-grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+}
+.feed-err {
+  color: var(--danger);
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+/* Reader: article meta cluster + masthead (replaces the PDF pager for articles). */
+.reader-article-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.article-head {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+}
+.article-head-site {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.article-head-dim {
+  color: var(--text-3);
+}
+.article-head-title {
+  font-size: 26px;
+  line-height: 1.25;
+  margin: 10px 0 6px;
+  color: var(--text-1);
+}
+.article-head-link {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+}
+.article-head-link:hover {
+  text-decoration: underline;
+}
+
+/* Feeds screen: subscription cards + post river. */
+.feed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.feed-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 13px;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.feed-card[data-error="true"] {
+  border-color: var(--danger-soft);
+}
+.feed-card-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.feed-card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-card-meta {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.feed-card-actions {
+  display: flex;
+  gap: 5px;
+}
+.feed-card-actions .mini-btn {
+  padding: 3px 8px;
+}
+.feed-post .dash-item-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Reader typography popover (QW4). */
+.typo-pop {
+  position: absolute;
+  right: 16px;
+  top: 52px;
+  z-index: 20;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  width: 248px;
+  animation: popin 0.14s;
+}
+.typo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.typo-label {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.typo-val {
+  min-width: 38px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Text label variant of a selection-popover action (Explain / Ask). */
+.sel-act-text {
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 560;
+  padding: 0 8px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sel-act-text:hover {
+  background: var(--row-hover);
+}
+
+/* Command palette: action rows + section headers (QW3). */
+.palette-section {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 10px 14px 4px;
+}
+.palette-cmd-icon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+}
+.palette-action kbd,
+.palette-result kbd {
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--row-hover);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+
+/* Keyboard shortcuts sheet. */
+.shortcuts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.shortcut-keys {
+  min-width: 92px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--bg-content);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.shortcut-label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* Daily Review (Bet A). */
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.review-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 15px;
+}
+.review-quote {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text-1);
+  font-family: "Source Serif 4", Georgia, serif;
+}
+.review-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.review-src {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+.review-src:hover {
+  color: var(--accent);
+}
+.review-src-meta {
+  color: var(--text-3);
+}
+
+/* ---------- responsive / mobile (narrow viewport, incl. iOS) ---------- */
+.sidebar-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 270px;
+  max-width: 84vw;
+  z-index: 60;
+  background: var(--bg-sidebar);
+  box-shadow: var(--shadow-lg);
+  animation: drawerIn 0.18s ease;
+  overflow: hidden;
+}
+.sidebar-drawer .sidebar {
+  width: 100%;
+  height: 100%;
+}
+@keyframes drawerIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, 0.42);
+  animation: popin 0.15s;
+}
+
+/* Reader → single column: drop the page thumbnails + drag handles; the chat /
+   annotations panels become full-screen overlays instead of fixed side columns. */
+.app-shell[data-narrow="true"] .reader .thumbs,
+.app-shell[data-narrow="true"] .reader .col-resizer {
+  display: none;
+}
+.app-shell[data-narrow="true"] .reading-col {
+  width: 100%;
+}
+.app-shell[data-narrow="true"] .ann-sidebar,
+.app-shell[data-narrow="true"] .reader .chat-panel {
+  position: fixed;
+  inset: 0;
+  width: auto !important;
+  z-index: 50;
+}
+/* Roomier touch targets + a comfortable reading measure on a phone. */
+.app-shell[data-narrow="true"] .table-row,
+.app-shell[data-narrow="true"] .nav-item {
+  min-height: 44px;
+}
+.app-shell[data-narrow="true"] .md-page {
+  max-width: 100% !important;
+}
+/* Trim non-essential title-bar chrome to fit a narrow bar. */
+.app-shell[data-narrow="true"] .titlebar .segmented,
+.app-shell[data-narrow="true"] .titlebar .btn-ghost,
+.app-shell[data-narrow="true"] .search-trigger kbd {
+  display: none;
 }

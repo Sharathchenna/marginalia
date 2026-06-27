@@ -1,5 +1,5 @@
 import { COLLECTIONS, PAPERS } from "../data";
-import type { Collection, Paper } from "../types";
+import type { Collection, Feed, Paper } from "../types";
 import {
   DEFAULT_SETTINGS,
   type Repository,
@@ -8,6 +8,7 @@ import {
 
 const K_PAPERS = "marginalia.papers";
 const K_COLLECTIONS = "marginalia.collections";
+const K_FEEDS = "marginalia.feeds";
 const K_SETTINGS = "marginalia.settings";
 
 function read<T>(key: string, fallback: T): T {
@@ -75,6 +76,12 @@ export class LocalRepository implements Repository {
   }
   async saveCollections(collections: Collection[]): Promise<void> {
     write(K_COLLECTIONS, collections);
+  }
+  async listFeeds(): Promise<Feed[]> {
+    return read<Feed[]>(K_FEEDS, []);
+  }
+  async saveFeeds(feeds: Feed[]): Promise<void> {
+    write(K_FEEDS, feeds);
   }
   async getSettings(): Promise<Settings> {
     return { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>(K_SETTINGS, {}) };

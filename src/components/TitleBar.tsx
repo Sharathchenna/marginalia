@@ -26,7 +26,11 @@ export function TitleBar({ store: s }: { store: Store }) {
         </div>
       )}
 
-      <button className="icon-btn" title="Toggle sidebar" onClick={s.toggleSidebar}>
+      <button
+        className="icon-btn"
+        title={s.narrow ? "Menu" : "Toggle sidebar"}
+        onClick={s.narrow ? s.toggleDrawer : s.toggleSidebar}
+      >
         <SidebarIcon size={16} />
       </button>
 

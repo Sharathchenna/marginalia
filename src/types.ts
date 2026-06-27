@@ -7,6 +7,14 @@ export interface Highlight {
 
 export type ReadingStatus = "unread" | "reading" | "done";
 
+/** What a library item is. "paper" = research paper/PDF (the original domain);
+ *  "article" = a saved web page (bookmark) or a post pulled from an RSS feed.
+ *  Articles reuse every Paper field (tags, collections, highlights, notes, search,
+ *  graph, sync) — `kind` just lets the UI present them differently. */
+export type ItemKind = "paper" | "article";
+/** How an article entered the library: a user-saved clip/bookmark, or an RSS feed post. */
+export type ArticleSource = "clip" | "feed";
+
 export interface Paper {
   id: string;
   title: string;
@@ -51,6 +59,47 @@ export interface Paper {
   retracted?: Retraction | null;
   /** Epoch-ms of the last retraction check, so we don't re-query every load. */
   retractionChecked?: number;
+
+  // ----- web articles (bookmark manager + blog reader) -----
+  /** Discriminator. Absent on legacy records — inferred via `itemKind()`; the
+   *  one-time store migration backfills it. */
+  kind?: ItemKind;
+  /** Articles only: how it was saved ("clip" = bookmark, "feed" = RSS post). */
+  source?: ArticleSource;
+  /** Canonical web URL of an article (papers use doi/arxiv instead). */
+  url?: string;
+  /** Cached site favicon URL (cosmetic; UI falls back to a letter badge). */
+  favicon?: string;
+  /** Id of the subscribed feed this post came from (`source === "feed"`). */
+  feedId?: string;
+  /** Article publish date (epoch-ms) — distinct from `addedTs` (date saved). */
+  publishedTs?: number;
+  /** Estimated read time in minutes (from word count). */
+  readingTime?: number;
+  /** Read-later archive: kept in the library but removed from the unread inbox. */
+  archived?: boolean;
+}
+
+/** A subscribed RSS/Atom feed (blog reader). Stored alongside collections in the
+ *  repository's key/value store — posts themselves are `article` Papers. */
+export interface Feed {
+  /** "feed:" + canonical feed URL. */
+  id: string;
+  /** The RSS/Atom feed URL we poll. */
+  url: string;
+  /** The site's human URL (for "open site"). */
+  siteUrl?: string;
+  title: string;
+  favicon?: string;
+  /** Optional grouping label in the sidebar. */
+  folder?: string;
+  /** Epoch-ms of the last successful fetch. */
+  lastFetched?: number;
+  /** Last fetch error message, if the most recent poll failed. */
+  lastError?: string;
+  /** Conditional-GET caching, so polls are cheap when nothing changed. */
+  etag?: string;
+  lastModified?: string;
 }
 
 /** A retraction/withdrawal notice resolved from Crossref's Retraction Watch data. */
@@ -84,9 +133,13 @@ export type Screen =
   | "graph"
   | "flashcards"
   | "discover"
+  | "feeds"
+  | "review"
   | "settings"
   | "onboarding";
-export type Filter = string; // 'all' | 'recent' | 'fav' | 'unread' | 'tag:X' | collection id
+// 'all' | 'recent' | 'fav' | 'unread' | 'queue' | 'untagged' | 'tag:X' | collection id
+// plus web-article filters: 'bookmarks' | 'feeds' | 'feed:<id>'
+export type Filter = string;
 // Legacy values "APA" | "MLA" | "Chicago" | "BibTeX" remain valid; CSL style ids
 // (e.g. "ieee", "nature", "vancouver") are also accepted by the citation engine.
 export type CiteStyle = "APA" | "MLA" | "Chicago" | "BibTeX" | (string & {});

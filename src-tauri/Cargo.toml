@@ -24,7 +24,13 @@ base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 # HTTP for DOI / arXiv metadata lookup + PDF download
 reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
-# Filesystem watching for watch folders
-notify = "6"
-# Native window translucency: Liquid Glass / vibrancy on macOS, acrylic on Windows
+# Native window translucency: Liquid Glass / vibrancy on macOS, acrylic on Windows.
+# Desktop-only — excluded from mobile (iOS/Android) targets so the Rust side can
+# compile for aarch64-apple-ios. Its usage in lib.rs is already cfg-gated.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 window-vibrancy = "0.5"
+
+# Filesystem watching for watch folders — desktop only (notify has no iOS backend).
+# Its usage in lib.rs is cfg(desktop)-gated. Excluded from mobile targets.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+notify = "6"

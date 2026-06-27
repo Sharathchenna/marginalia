@@ -62,7 +62,8 @@ fn handle_conn(mut stream: std::net::TcpStream, app: &AppHandle) {
         || header(&req, "sec-fetch-dest") == Some("document")
         || header(&req, "sec-fetch-mode").is_none();
     let first = req.lines().next().unwrap_or("");
-    let (status, body) = if first.starts_with("POST") && first.contains("/clip") {
+    let path = first.split_whitespace().nth(1).unwrap_or("");
+    let (status, body) = if first.starts_with("POST") && path.starts_with("/clip") {
         // Clip a page to Markdown (extension-only — needs X-Marginalia).
         match (authorized, body_json(&data)) {
             (true, Some(payload)) => {
@@ -71,6 +72,16 @@ fn handle_conn(mut stream: std::net::TcpStream, app: &AppHandle) {
             }
             (false, _) => ("403 Forbidden", FORBIDDEN_HTML),
             (true, None) => ("400 Bad Request", ERR_HTML),
+        }
+    } else if path.starts_with("/subscribe") {
+        // Subscribe to a blog/RSS feed (resolved by the frontend's feed pipeline).
+        match parse_param(&req) {
+            Some(u) if !u.is_empty() && authorized => {
+                let _ = app.emit("capture-feed", u);
+                ("200 OK", OK_HTML)
+            }
+            Some(_) if !authorized => ("403 Forbidden", FORBIDDEN_HTML),
+            _ => ("200 OK", ERR_HTML),
         }
     } else {
         // GET /add?u=… — bookmarklet / single-link capture. (/marg-ping → ERR/200.)

@@ -1,8 +1,99 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CITE_STYLE_FULL } from "../data";
 import { CITE_STYLE_OPTIONS, formatHtml, formatText } from "../lib/csl";
 import type { Store } from "../store";
 import { CopyIcon, UploadIcon } from "../icons";
+
+// Keyboard shortcuts cheat-sheet (opened with "?" or from the command palette).
+const SHORTCUTS: { keys: string; label: string }[] = [
+  { keys: "⌘K", label: "Command palette — run any action" },
+  { keys: "⌘N", label: "Add by DOI / arXiv / URL" },
+  { keys: "?", label: "This shortcuts sheet" },
+  { keys: "↑ ↓ / j k", label: "Move through the list" },
+  { keys: "↵ / o", label: "Open the selected item in the reader" },
+  { keys: "Esc", label: "Close overlays" },
+  { keys: "← →", label: "Reader: previous / next page" },
+  { keys: "+ − 0", label: "Reader: zoom in / out / reset" },
+  { keys: "⌘F", label: "Reader: find in document" },
+];
+
+export function ShortcutsModal({ store: s }: { store: Store }) {
+  return (
+    <div className="scrim center" onClick={s.closeShortcuts}>
+      <div className="modal" style={{ width: 460 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Keyboard shortcuts</h2>
+          <button className="modal-x" onClick={s.closeShortcuts}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="shortcuts-grid">
+            {SHORTCUTS.map((sc) => (
+              <div className="shortcut-row" key={sc.keys}>
+                <kbd className="shortcut-keys">{sc.keys}</kbd>
+                <span className="shortcut-label">{sc.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// In-app replacement for window.prompt / window.confirm (both no-ops in the Tauri
+// webview). Driven by store.dialog; resolves the pending Promise via closeDialog.
+export function DialogModal({ store: s }: { store: Store }) {
+  const d = s.dialog;
+  const [val, setVal] = useState(d?.kind === "prompt" ? d.value : "");
+  useEffect(() => {
+    setVal(d?.kind === "prompt" ? d.value : "");
+  }, [d]);
+  if (!d) return null;
+  const cancel = () => s.closeDialog(d.kind === "prompt" ? null : false);
+  const accept = () => s.closeDialog(d.kind === "prompt" ? val : true);
+  return (
+    <div className="scrim center" onMouseDown={cancel}>
+      <div className="modal" style={{ width: 420 }} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>{d.title}</h2>
+          <button className="modal-x" onClick={cancel}>×</button>
+        </div>
+        <div className="modal-body">
+          {d.kind === "prompt" ? (
+            <input
+              className="id-input"
+              autoFocus
+              value={val}
+              placeholder={d.placeholder}
+              onChange={(e) => setVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  accept();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancel();
+                }
+              }}
+            />
+          ) : (
+            d.body && <p style={{ fontSize: 13.5, color: "var(--text-2)", lineHeight: 1.55 }}>{d.body}</p>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="btn-cancel" onClick={cancel}>Cancel</button>
+          <button
+            className="btn-primary"
+            style={d.kind === "confirm" && d.danger ? { background: "var(--danger)" } : undefined}
+            onClick={accept}
+          >
+            {d.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STYLE_LABEL: Record<string, string> = Object.fromEntries(
   CITE_STYLE_OPTIONS.map((o) => [String(o.id), o.label]),

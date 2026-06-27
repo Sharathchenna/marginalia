@@ -50,6 +50,52 @@ export const AllPapersIcon = ({ size, style }: IconProps) => (
   </svg>
 );
 
+export const InboxIcon = ({ size, style }: IconProps) => (
+  <svg {...base(size, style)}>
+    <path
+      d="M2 9.5 4 3.2a1 1 0 0 1 .95-.7h6.1a1 1 0 0 1 .95.7L14 9.5v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+    />
+    <path d="M2 9.5h3.2a1 1 0 0 1 .9.6 2 2 0 0 0 3.8 0 1 1 0 0 1 .9-.6H14" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+  </svg>
+);
+
+export const BookmarkIcon = ({ size, style }: IconProps) => (
+  <svg {...base(size, style)}>
+    <path
+      d="M4 2.6h8a.5.5 0 01.5.5v10.4L8 11.1 3.5 13.5V3.1a.5.5 0 01.5-.5z"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+export const RssIcon = ({ size, style }: IconProps) => (
+  <svg {...base(size, style)}>
+    <circle cx="4" cy="12" r="1.4" fill="currentColor" />
+    <path
+      d="M3 7.3a5.7 5.7 0 015.7 5.7M3 3.6a9.4 9.4 0 019.4 9.4"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+export const GlobeIcon = ({ size, style }: IconProps) => (
+  <svg {...base(size, style)}>
+    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
+    <path
+      d="M2 8h12M8 2c1.9 1.7 2.9 3.9 2.9 6S9.9 12.3 8 14C6.1 12.3 5.1 10.1 5.1 8S6.1 3.7 8 2z"
+      stroke="currentColor"
+      strokeWidth="1.2"
+    />
+  </svg>
+);
+
 export const ClockIcon = ({ size, style }: IconProps) => (
   <svg {...base(size, style)}>
     <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
