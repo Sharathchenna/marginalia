@@ -1494,6 +1494,49 @@ textarea.editable-input {
   overflow: auto; /* both axes — so zoomed/wide pages stay reachable */
   padding: 40px 24px;
 }
+/* read-aloud "now reading" caption bar (bottom of the reading column) */
+.tts-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-content);
+}
+.tts-ctl {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--bg-elev);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.tts-ctl:hover {
+  background: var(--row-hover);
+}
+.tts-caption {
+  flex: 1;
+  min-width: 0;
+  max-height: 58px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.tts-word.on {
+  color: var(--text-1);
+  background: var(--accent-soft);
+  border-radius: 4px;
+}
+.tts-prep {
+  font-style: italic;
+}
 .md-page {
   max-width: 760px;
   margin: 0 auto;

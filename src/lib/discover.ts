@@ -282,6 +282,49 @@ export async function trendingHuggingFace(): Promise<DiscoverHit[]> {
   return arr.map((it: any) => mapHfPaper(it.paper ?? it));
 }
 
+// The data server's curated "latest LLM research" feed (GET /v1/feed/latest). Uses
+// the same server as sync/PDFs (apiUrl host, port 8443) so both apps show the same
+// ranked feed with the server's `inLibrary` signal.
+function feedBase(apiUrl: string): string | null {
+  const t = (apiUrl || "").trim();
+  if (!t) return null;
+  try {
+    const u = new URL(t);
+    u.port = "8443";
+    u.pathname = "";
+    u.search = "";
+    return u.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+export async function serverFeed(apiUrl: string, token: string): Promise<DiscoverHit[]> {
+  const base = feedBase(apiUrl);
+  if (!base) return [];
+  const res = await fetch(`${base}/v1/feed/latest?limit=40`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data: any = await res.json();
+  const items: any[] = Array.isArray(data?.items) ? data.items : [];
+  return items.map((it): DiscoverHit => {
+    const authors = String(it.authors || "");
+    return {
+      id: it.arxiv || "",
+      source: "huggingface",
+      title: (it.title || "Untitled").replace(/\s+/g, " "),
+      authorsShort: authors ? lastName(authors.split(",")[0]) + (authors.includes(",") ? " et al." : "") : "",
+      authorsFull: authors,
+      year: it.publishedAt ? Number(String(it.publishedAt).slice(0, 4)) : 0,
+      venue: "arXiv · HF",
+      doi: "—",
+      arxiv: it.arxiv || "—",
+      abstract: (it.summary || "").replace(/\s+/g, " "),
+      citedBy: it.upvotes || 0,
+    };
+  });
+}
+
 const ADAPTERS: Record<SourceId, (q: string) => Promise<DiscoverHit[]>> = {
   openalex: searchOpenAlex,
   semanticscholar: searchSemanticScholar,

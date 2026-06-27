@@ -29,12 +29,19 @@ export interface Settings {
   webdavPass?: string;
   /** Passphrase for end-to-end-encrypting the sync snapshot (never leaves device). */
   syncPassphrase?: string;
-  /** Optional self-hosted AI backend (see server/) — required for AI on iOS/web. */
+  /** Self-hosted server (see server/ + server-rs/): AI backend on iOS/web AND the
+   * per-record sync + PDF + feed server (host, port 8443). */
   apiUrl?: string;
   apiToken?: string;
   /** Auto-sync on this device: pull on launch, push on backgrounding (opt-in). */
   syncAuto?: boolean;
-  /** Epoch-ms of the snapshot we last pushed/pulled — guards redundant auto-pulls. */
+  /** Read aloud: provider ("edge" = MS Edge neural | "system" = OS voice | "off"). */
+  ttsProvider?: string;
+  /** Edge voice short-name, e.g. "en-US-AriaNeural". */
+  ttsVoice?: string;
+  /** Speaking rate multiplier (1 = normal). */
+  ttsRate?: number;
+  /** Epoch-ms of the last successful sync (server clock) — guards redundant pulls. */
   lastSyncTs?: number;
 }
 
@@ -49,6 +56,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // Browser dev preview skips onboarding; the native app sets this false so the
   // folder picker shows on first run.
   librarySet: true,
+  ttsProvider: "edge",
+  ttsVoice: "en-US-AriaNeural",
+  ttsRate: 1.0,
 };
 
 // All app data access goes through this interface. The localStorage and Tauri

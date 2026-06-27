@@ -1,0 +1,17 @@
+# Marginalia self-hosted data + sync server (Rust/Axum).
+# Isolated workspace — does NOT touch the desktop src-tauri crate. The shared
+# logic (db/metadata/embeddings) is reused from src-tauri verbatim via #[path]
+# includes in the `core` crate, so there is one source of truth.
+[workspace]
+resolver = "2"
+members = ["core", "server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }

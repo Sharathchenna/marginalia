@@ -6,6 +6,7 @@ mod capture;
 mod db;
 mod embeddings;
 mod metadata;
+mod tts;
 
 use std::sync::Mutex;
 
@@ -43,7 +44,10 @@ fn default_settings() -> Value {
         "autoBib": false,
         "webdavUrl": "",
         "webdavUser": "",
-        "webdavPass": ""
+        "webdavPass": "",
+        "ttsProvider": "edge",
+        "ttsVoice": "en-US-AriaNeural",
+        "ttsRate": 1.0
     })
 }
 
@@ -829,7 +833,9 @@ pub fn run() {
             semantic_search,
             similar_papers,
             agent::ai_chat,
-            agent::ai_cancel
+            agent::ai_cancel,
+            tts::tts_speak,
+            tts::tts_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Marginalia");

@@ -275,6 +275,10 @@ export function useStore() {
   const [embedProvider, setEmbedProviderState] = useState("off");
   const [embedModel, setEmbedModelState] = useState("voyage-3.5-lite");
   const [voyageKey, setVoyageKeyState] = useState("");
+  // Read aloud (text-to-speech).
+  const [ttsProvider, setTtsProviderState] = useState("edge");
+  const [ttsVoice, setTtsVoiceState] = useState("en-US-AriaNeural");
+  const [ttsRate, setTtsRateState] = useState(1.0);
   const [embedStatus, setEmbedStatus] = useState<EmbedStatus>({ embedded: 0, model: "", hasKey: false });
   const [indexing, setIndexing] = useState(false);
   // Keep <library>/library.bib in sync with the library (LaTeX/Overleaf users).
@@ -384,6 +388,9 @@ export function useStore() {
       if (typeof st.embedProvider === "string") setEmbedProviderState(st.embedProvider);
       if (typeof st.embedModel === "string") setEmbedModelState(st.embedModel);
       if (typeof st.voyageKey === "string") setVoyageKeyState(st.voyageKey);
+      if (typeof st.ttsProvider === "string") setTtsProviderState(st.ttsProvider);
+      if (typeof st.ttsVoice === "string") setTtsVoiceState(st.ttsVoice);
+      if (typeof st.ttsRate === "number") setTtsRateState(st.ttsRate);
       if (typeof st.autoBib === "boolean") setAutoBibState(st.autoBib);
       if (typeof st.webdavUrl === "string") setWebdavUrlState(st.webdavUrl);
       if (typeof st.webdavUser === "string") setWebdavUserState(st.webdavUser);
@@ -1245,6 +1252,9 @@ export function useStore() {
     embedProvider,
     embedModel,
     voyageKey,
+    ttsProvider,
+    ttsVoice,
+    ttsRate,
     embedStatus,
     indexing,
     autoBib,
@@ -1334,6 +1344,18 @@ export function useStore() {
       persistSettings({ voyageKey: k, embedProvider: k ? "voyage" : "off" });
       setEmbedProviderState(k ? "voyage" : "off");
       void embeddingStatus().then(setEmbedStatus);
+    },
+    setTtsProvider: (p: string) => {
+      setTtsProviderState(p);
+      persistSettings({ ttsProvider: p });
+    },
+    setTtsVoice: (v: string) => {
+      setTtsVoiceState(v);
+      persistSettings({ ttsVoice: v });
+    },
+    setTtsRate: (rate: number) => {
+      setTtsRateState(rate);
+      persistSettings({ ttsRate: rate });
     },
     setEmbedModel: (m: string) => {
       setEmbedModelState(m);

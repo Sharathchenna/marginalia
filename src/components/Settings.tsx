@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { exportLibrary } from "../lib/citation";
 import { CITE_STYLE_OPTIONS } from "../lib/csl";
-import { isTauri } from "../lib/tauri";
+import { invoke, isTauri } from "../lib/tauri";
+import { TtsController } from "../lib/tts";
 import type { Store } from "../store";
 import type { Density } from "../types";
 import { FolderIcon } from "../icons";
@@ -9,6 +10,25 @@ import { FolderIcon } from "../icons";
 const EMBED_MODELS = ["voyage-3.5-lite", "voyage-3.5"];
 
 const DENSITIES: Density[] = ["compact", "comfortable"];
+
+const TTS_PROVIDERS: { id: string; label: string }[] = [
+  { id: "edge", label: "Edge neural" },
+  { id: "system", label: "System voice" },
+  { id: "off", label: "Off" },
+];
+
+// Shown until the live voice list loads (or when running in the browser preview).
+const FALLBACK_VOICES = [
+  { name: "en-US-AriaNeural", label: "Aria", locale: "en-US", gender: "Female" },
+  { name: "en-US-JennyNeural", label: "Jenny", locale: "en-US", gender: "Female" },
+  { name: "en-US-GuyNeural", label: "Guy", locale: "en-US", gender: "Male" },
+  { name: "en-US-AndrewNeural", label: "Andrew", locale: "en-US", gender: "Male" },
+  { name: "en-US-EmmaNeural", label: "Emma", locale: "en-US", gender: "Female" },
+  { name: "en-GB-SoniaNeural", label: "Sonia", locale: "en-GB", gender: "Female" },
+  { name: "en-GB-RyanNeural", label: "Ryan", locale: "en-GB", gender: "Male" },
+];
+
+type TtsVoice = { name: string; label: string; locale: string; gender: string };
 
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
@@ -230,6 +250,34 @@ function AiBackend({ store: s }: { store: Store }) {
 export function Settings({ store: s }: { store: Store }) {
   const restoreRef = useRef<HTMLInputElement>(null);
   const pocketRef = useRef<HTMLInputElement>(null);
+
+  // Live Edge voice list (English only, deduped) with a static fallback.
+  const [voices, setVoices] = useState<TtsVoice[]>(FALLBACK_VOICES);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let alive = true;
+    void invoke<{ voices: TtsVoice[] }>("tts_voices")
+      .then((r) => {
+        if (!alive || !r?.voices?.length) return;
+        const en = r.voices.filter((v) => v.locale.startsWith("en-"));
+        setVoices(en.length ? en : r.voices);
+      })
+      .catch(() => {/* keep fallback */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // One-off controller for the "Preview" button.
+  const previewRef = useRef<TtsController | null>(null);
+  const preview = () => {
+    if (!previewRef.current) previewRef.current = new TtsController();
+    previewRef.current.start(
+      "This is how your papers will sound when read aloud.",
+      { provider: s.ttsProvider === "off" ? "edge" : s.ttsProvider, voice: s.ttsVoice, rate: s.ttsRate },
+    );
+  };
+
   return (
     <main className="page-scroll">
       <div className="page-inner settings">
@@ -408,6 +456,65 @@ export function Settings({ store: s }: { store: Store }) {
               </div>
             </div>
           )}
+
+          <div>
+            <h3>Read aloud</h3>
+            <p className="desc">
+              Listen to papers in the reader. <strong>Edge neural</strong> uses Microsoft’s free
+              online voices (no key, needs internet); <strong>System voice</strong> uses your OS’s
+              built-in voice and works offline.
+            </p>
+            <div className="seg-group">
+              {TTS_PROVIDERS.map((p) => (
+                <button
+                  key={p.id}
+                  className="seg-pill"
+                  data-active={s.ttsProvider === p.id}
+                  onClick={() => s.setTtsProvider(p.id)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {s.ttsProvider === "edge" && (
+              <div style={{ display: "flex", gap: 9, marginTop: 10, alignItems: "center" }}>
+                <select
+                  className="id-input"
+                  style={{ flex: 1 }}
+                  value={s.ttsVoice}
+                  onChange={(e) => s.setTtsVoice(e.target.value)}
+                >
+                  {voices.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.label} · {v.locale} · {v.gender}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {s.ttsProvider !== "off" && (
+              <div style={{ display: "flex", gap: 12, marginTop: 12, alignItems: "center" }}>
+                <span className="desc" style={{ margin: 0, minWidth: 42 }}>
+                  Speed
+                </span>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  value={s.ttsRate}
+                  onChange={(e) => s.setTtsRate(Number(e.target.value))}
+                  style={{ flex: 1 }}
+                />
+                <span className="desc" style={{ margin: 0, minWidth: 34 }}>
+                  {s.ttsRate.toFixed(1)}×
+                </span>
+                <button className="mini-btn" onClick={preview}>
+                  Preview
+                </button>
+              </div>
+            )}
+          </div>
 
           <div>
             <h3>Library</h3>
