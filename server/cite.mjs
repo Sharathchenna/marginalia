@@ -6,16 +6,13 @@
 // Imported by server.mjs to serve POST /v1/cite for iOS and the web build. The
 // CSL XML lives in ./csl/ (copied into the image next to this file).
 import CSL from "citeproc";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// In the Docker image the styles are copied to ./csl/; running from the repo they
-// live in ../src/styles/csl/. Use whichever exists.
-const CSL_DIR = existsSync(join(here, "csl"))
-  ? join(here, "csl")
-  : join(here, "..", "src", "styles", "csl");
+// CSL XML lives next to this file in ./csl/ (both in the repo and in the image).
+const CSL_DIR = join(here, "csl");
 
 // Style id → CSL filename. Mirrors csl.ts's CSL_XML map.
 const CSL_FILES = {

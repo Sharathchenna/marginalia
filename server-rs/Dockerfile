@@ -1,11 +1,8 @@
-# Marginalia data + sync server. BUILD CONTEXT MUST BE THE REPO ROOT, because
-# the `core` crate reuses ../../../src-tauri/src/{db,metadata,embeddings}.rs via
-# #[path]:   docker build -f server-rs/Dockerfile -t marginalia-data .
+# Marginalia data + sync server. Self-contained (the db/metadata/embeddings
+# modules live in server-rs/core/src now), so the build context just needs the
+# server-rs/ tree:   docker build -f server-rs/Dockerfile -t marginalia-data .
 FROM rust:1-bookworm AS build
 WORKDIR /app
-# The shared modules the core crate #[path]-includes.
-COPY src-tauri/src ./src-tauri/src
-# The server workspace.
 COPY server-rs ./server-rs
 RUN cd server-rs && cargo build --release -p marginalia-server
 

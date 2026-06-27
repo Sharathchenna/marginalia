@@ -1,145 +1,97 @@
 # Marginalia
 
-A local-first research paper manager — a calm, reading-first alternative to
-Mendeley/Zotero — that is **also** a full-text bookmark manager and RSS blog
-reader. Built with **Tauri + React + TypeScript**.
+A calm, reading-first research paper manager — a local alternative to
+Mendeley/Zotero that is **also** a full-text bookmark manager and RSS blog
+reader, with an AI "explainer" for every paper.
 
-It implements the UI from the Claude Design handoff ("Paper Manager") **and**
-wires it to working local-first functionality: persistent storage, live
-metadata lookup, a real PDF.js reader, ranked search, and citation
-import/export. Runs fully in the browser for development; a native SQLite
-backend (Rust) drops in behind the same interface for the desktop build.
+Marginalia is **native Swift apps** (macOS + iOS) backed by a **single-user,
+self-hosted server**. Each app keeps a local cache for offline reading and
+delta-syncs with the server; everything that needs a shared service (metadata
+lookup, embeddings/semantic search, retraction checks, citations, read-aloud,
+and the Claude-powered explainer/chat) is a thin call to the server.
 
-## Run it
-
-```bash
-npm install
-npm run dev        # → http://localhost:1420  (web preview, no Rust needed)
-```
-
-To run as a native desktop app (requires the Rust toolchain + Tauri prereqs:
-https://tauri.app/start/prerequisites/):
-
-```bash
-npm run tauri dev
-```
-
-## What's implemented (from the design)
-
-| Screen / feature | Status |
-|---|---|
-| Three-pane shell (collapsible sidebar, list, detail) | ✅ |
-| Table + card views, sortable, multi-select bulk bar | ✅ |
-| Inline star / read-status toggles | ✅ |
-| Collections (nestable) + tags filtering | ✅ |
-| Detail panel (abstract, metadata, tags, notes) | ✅ |
-| PDF reader: thumbnails, highlight palette, annotations sidebar | ✅ |
-| Notebook (highlights aggregated across papers) | ✅ |
-| ⌘K command palette with full-text snippet highlighting | ✅ |
-| Import + add-by-identifier + citation modals, toasts | ✅ |
-| Settings (library location, watch folders, theme, cite style) | ✅ |
-| Onboarding first-run screen | ✅ |
-| Light / dark theme + compact / comfortable density | ✅ |
-| Bookmark manager — full-text web article snapshots (clipper) | ✅ |
-| Blog reader — RSS/Atom subscriptions, unread inbox, OPML | ✅ |
-
-Keyboard: **⌘K** opens the palette, **Esc** closes overlays, **↑/↓** move the
-library selection. **⌘/Ctrl-click** a row to multi-select for the bulk bar.
-
-## What actually works (beyond the mockup)
-
-All six phases of the build plan are implemented:
-
-1. **Persistence** — everything (papers, collections, settings, highlights,
-   read/star state) persists across reloads. Browser backend uses
-   `localStorage`; native uses SQLite. Both sit behind one `Repository`
-   interface (`src/lib/repo.ts`) so the UI is identical.
-2. **Metadata lookup** — *Add by ID* really fetches from **arXiv** and
-   **CrossRef** (DOI / arXiv ID / URL), de-dupes against your library, and adds
-   the paper. (Dev uses Vite proxies to dodge CORS; native uses `reqwest`.)
-3. **PDF.js reader** — renders the **actual paper PDF** (streamed from arXiv via
-   proxy, with a bundled fallback): real pages, generated thumbnails, page
-   navigation, a selectable text layer, and **select-to-highlight** that saves
-   annotations.
-4. **Search** — ⌘K is backed by a tokenized, field-weighted ranked search
-   (`src/lib/search.ts`); native mirrors it with SQLite **FTS5**.
-5. **Citations** — APA / MLA / Chicago / BibTeX formatting with working
-   clipboard copy, plus **library export** (BibTeX / RIS) and **import** (paste
-   or drop a `.bib`/`.ris` file) in Settings and the Import modal.
-6. **Polish** — persisted theme/density/default-style/library-location/watch
-   folders, empty states, and a `notify`-based watch-folder watcher on the
-   native side.
-
-Verify the logic yourself: `node scripts/smoke.mjs` (15 runtime assertions over
-search, citation round-trips, and identifier parsing).
-
-## Native desktop build (Rust)
-
-The `src-tauri/` backend is complete (SQLite via `rusqlite` + FTS5, `reqwest`
-metadata, `notify` watch folders, all commands registered). It needs the Rust
-toolchain, which wasn't available in the environment this was built in, so the
-**Rust side is written but not yet compiled here**. To run it:
-
-```bash
-# 1. install Rust + Tauri prerequisites: https://tauri.app/start/prerequisites/
-# 2. generate app icons once (Tauri needs them to build):
-npm run tauri icon path/to/icon.png
-# 3. regenerate the native seed if you change src/data.ts:
-node scripts/gen-seed.mjs
-# 4. run:
-npm run tauri dev
-```
-
-## Design tokens
-
-Cobalt-iris accent · Inter (UI) · Source Serif 4 (reading) · JetBrains Mono
-(code/identifiers). All tokens (light + dark) live in
-[`src/styles/tokens.css`](src/styles/tokens.css), ported verbatim from the design.
+> Earlier versions were a Tauri + React desktop/web app. That has been **retired**
+> in favour of the native Swift apps; its shared Rust logic now lives in the
+> server (`server-rs/core`). See the git history if you need it.
 
 ## Architecture
 
 ```
-src/
-  store.ts            # all app state + actions (useStore hook); hydrates from repo
-  data.ts             # seed papers, collections, highlight palette
-  types.ts            # domain types
-  icons.tsx           # SVG icon set
-  lib/
-    repo.ts           # Repository interface + backend selection
-    localRepo.ts      # localStorage backend (browser / dev)
-    tauriRepo.ts      # Tauri command backend (native)
-    tauri.ts          # isTauri() + invoke() helper
-    metadata.ts       # arXiv + CrossRef identifier lookup
-    items.ts          # unified item helpers (paper vs web article, favicons)
-    feeds.ts          # RSS/Atom parser, feed discovery, OPML, article ingestion
-    pdf.ts            # pdf.js setup, page/text-layer rendering
-    search.ts         # ranked full-text search
-    citation.ts       # APA/MLA/Chicago/BibTeX/RIS + import parser
-  styles/             # tokens.css (design tokens) + app.css (components)
-  components/         # TitleBar, Sidebar, Library, Reader, Notebook, Feeds,
-                      # Settings, Onboarding, CommandPalette, Modals, Toast
-src-tauri/
-  src/lib.rs          # Tauri commands + setup + watcher
-  src/db.rs           # SQLite (JSON blobs + FTS5)
-  src/metadata.rs     # reqwest arXiv/CrossRef lookup
-  seed.json           # demo library (generated from data.ts)
-scripts/
-  gen-seed.mjs        # regenerate src-tauri/seed.json from data.ts
-  smoke.mjs           # runtime tests for the logic modules
-server/               # self-hostable AI backend (HTTP/SSE → agent.mjs) for iOS/web
-ios/share-extension/  # iOS "Share → Marginalia" extension (added in Xcode)
-docs/IOS-PLAN.md      # runbook for building the iOS companion app
+ios-native/            Native SwiftUI apps (one XcodeGen project, two targets)
+  Sources/
+    Models/            Codable domain types (Paper, Collection, Feed, Settings…)
+    Common/            Shared, UI-free services (sync, lookup, PDF, citations,
+                       TTS, semantic search, retraction, feeds, SRS, chat…)
+    Data/              Local-cache repository (JSON) + delta sync
+    App/AppModel.swift The shared @Observable state hub (used by both UIs)
+    Features/          iOS / iPadOS SwiftUI screens
+    macOS/             macOS-native SwiftUI screens (NavigationSplitView, Table,
+                       PDFKit, menu commands)
+  project.yml          XcodeGen spec → MarginaliaSpike (iOS) + MarginaliaMac (macOS)
+
+server-rs/             Data + sync server — Rust / Axum  (container: marginalia-data)
+  core/src/            db.rs (SQLite: JSON + FTS5 + KV + embeddings),
+                       metadata.rs (DOI/arXiv lookup, retraction, webpage/feed),
+                       embeddings.rs (Voyage embed + cosine)
+  server/src/main.rs   HTTP routes: papers CRUD + /sync, search, collections/
+                       settings/feeds, lookup/retraction/webpage/feed,
+                       embed/semantic/similar, PDF object store, latest feed
+
+server/                AI relay — Node  (container: marginalia-ai)
+  server.mjs           HTTP/SSE: /v1/agent (Claude), /v1/tts/*, /v1/cite[/styles]
+  cite.mjs             citeproc/CSL citation formatting
+  csl/                 bundled CSL styles (IEEE, Nature, ACM, AMA, Harvard…)
+  sidecar/             agent.mjs (Claude Agent SDK) + tts.mjs (Edge neural TTS)
+
+browser-extension/     "Send to Marginalia" web capture
+docs/                  design + migration plans
 ```
 
-## Future ideas
+The two server containers sit behind private HTTPS (Tailscale serve); the apps
+point at one host (data/PDF/sync on `:8443`, the AI relay on `:10000`).
 
-- Swap the hand-rolled citation formatter for a full CSL/citeproc engine (more styles).
-- Render saved highlights as overlays on the PDF (currently captured + listed).
-- Real PDF text/metadata extraction on import (Rust) for files without an identifier.
-- Optional cross-device sync layer on top of the local SQLite store.
+## Build & run
 
-## Provenance
+### Native apps (Xcode 16+/Swift 5+; XcodeGen)
 
-UI recreated from a Claude Design handoff bundle. Original design medium was
-HTML/CSS/JS prototypes; this is an idiomatic React port matching the visual
-output (per the bundle's README guidance).
+```bash
+cd ios-native
+xcodegen generate
+# macOS:
+xcodebuild -scheme MarginaliaMac -destination 'platform=macOS' build
+# iOS simulator (no signing):
+xcodebuild -scheme MarginaliaSpike -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+Re-run `xcodegen generate` whenever you add a `.swift` file. The server URL +
+token are embedded in `Settings` (overridable in the app's Settings screen).
+
+### Data + sync server (Rust)
+
+```bash
+cd server-rs
+MARG_TOKEN=your-shared-secret cargo run -p marginalia-server   # :8800
+# or: docker build -f server-rs/Dockerfile -t marginalia-data . && docker run …
+```
+
+### AI relay (Node)
+
+```bash
+cd server
+npm --prefix sidecar install --omit=dev
+npm install --omit=dev
+ANTHROPIC_API_KEY=sk-…  MARG_TOKEN=your-shared-secret  node server.mjs   # :8799
+# or: docker build -f server/Dockerfile -t marginalia-ai . && docker run …
+```
+
+## Features
+
+Library (filters, collections, tags, search) · reader with a streaming AI
+**explainer** + native **PDFKit** (highlights, page resume, import) ·
+**read-aloud** (Edge neural TTS) · add by DOI/arXiv/URL or web clip · **AI chat**
+about a paper or the whole library · **semantic search** (Voyage embeddings) ·
+**retraction checks** (Retraction Watch) · **citations** (full CSL: APA/MLA/
+Chicago/IEEE/Nature/ACM/AMA/Harvard/BibTeX) · BibTeX/RIS export · dashboard ·
+Discover (Hugging Face daily papers + arXiv search) · RSS/Atom feeds · notebook ·
+flashcards + spaced-repetition review · connections graph · per-record sync.

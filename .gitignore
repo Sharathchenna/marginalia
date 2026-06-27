@@ -1,11 +1,8 @@
 node_modules
-dist
-dist-ssr
 *.local
 .DS_Store
 
-# Rust / Tauri
-src-tauri/target
+# Rust
 server-rs/target
 server-rs/data
 

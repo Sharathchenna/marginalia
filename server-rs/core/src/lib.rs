@@ -1,16 +1,11 @@
-//! Shared Marginalia logic — reused VERBATIM from the desktop app's Tauri-free
-//! modules via `#[path]` includes. There is a single source of truth: editing
-//! `src-tauri/src/db.rs` (etc.) updates both the desktop app and this server, so
-//! the SQLite schema and query logic can never diverge.
+//! Shared Marginalia logic — the SQLite store, metadata fetchers (DOI/arXiv
+//! lookup, retraction, webpage/feed), and Voyage embeddings. These modules have
+//! no `tauri` imports and reference only `rusqlite`, `serde_json`, and `reqwest`.
 //!
-//! These three modules have no `tauri` imports (verified) and reference only
-//! `rusqlite`, `serde_json`, and `reqwest`, which is why they drop straight in.
+//! They used to live in the desktop app's `src-tauri/src/` and were `#[path]`-
+//! included here; since the Tauri app was retired in favour of the native Swift
+//! apps, they now live here directly and `server-rs` is fully self-contained.
 
-#[path = "../../../src-tauri/src/db.rs"]
 pub mod db;
-
-#[path = "../../../src-tauri/src/metadata.rs"]
 pub mod metadata;
-
-#[path = "../../../src-tauri/src/embeddings.rs"]
 pub mod embeddings;
