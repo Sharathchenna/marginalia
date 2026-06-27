@@ -3,9 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Self-hostable HTTP/SSE bridge to the Marginalia Claude Agent SDK sidecar — enables AI on iOS and the web build.",
+  "description": "Self-hostable HTTP/SSE service for Marginalia's Node-side features (Claude Agent SDK relay, Edge TTS, citeproc/CSL) — enables AI, read-aloud, and citations on iOS and the web build.",
   "scripts": {
     "start": "node server.mjs"
+  },
+  "dependencies": {
+    "citeproc": "^2.4.63"
   },
   "engines": {
     "node": ">=18"

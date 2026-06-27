@@ -40,9 +40,13 @@ to set them.
 | `GET /search?q=` | `db::search` | FTS5 prefix |
 | `GET/PUT /collections`, `/feeds`, `/settings` | `db::get_kv/set_kv` | settings PUT merges |
 | `GET /lookup?id=` | `metadata::lookup` | DOI / arXiv / URL |
+| `GET /retraction?doi=` | `metadata::check_retraction` | Retraction Watch (only the DOI is sent) |
+| `GET /webpage?url=` | `metadata::fetch_webpage` | resolve a web page → saveable item |
+| `GET /feed?url=&etag=&since=` | `metadata::fetch_feed` | user RSS/Atom subscription (conditional GET). Distinct from `/feed/latest` (curated HF daily papers) |
 | `POST /embed`, `GET /embed/status`, `/semantic?q=&k=`, `/similar/:id?k=` | `embeddings::*` + `db::*` | Voyage |
 | `GET/PUT /pdf/:id`, `GET /pdf` | disk object store | `:id` → `<id>.pdf` (sanitized) |
-| `POST /agent` (SSE) | spawns `node agent.mjs` | ports `server.mjs`; gated on `AGENT_SCRIPT` |
+| `POST /pdf/:id/fetch` `{url}` | disk object store | server-side download of a PDF URL into the store (mirrors desktop `download_pdf`) |
+| `POST /agent` (SSE) | spawns `node agent.mjs` | ports `server.mjs`; gated on `AGENT_SCRIPT` (off here; the AI relay handles agent) |
 | `GET /health` (no auth) | — | `{"ok":true}` |
 
 ## Deploy
@@ -55,7 +59,14 @@ docker run -e MARG_TOKEN=secret -v marg-data:/data -p 127.0.0.1:8800:8800 margin
 ```
 Back up `library.db` + the `pdfs/` dir (the plan flags both as load-bearing).
 
+## Companion Node service (`../server`)
+The Node-side features that can't run in Rust live in the AI relay (`server/server.mjs`,
+the `marginalia-ai` container) so iOS/web get full parity:
+- `POST /v1/cite` `{paper|papers, style}` + `GET /v1/cite/styles` — citeproc/CSL
+  (IEEE, Nature, ACM, AMA, Harvard…) with the dependency-free APA/MLA/Chicago/BibTeX
+  fallback; ports `citation.ts`/`csl.ts` (`server/cite.mjs`).
+- `POST /v1/tts/speak` + `GET /v1/tts/voices` — Microsoft Edge neural read-aloud
+  (spawns `sidecar/tts.mjs`).
+
 ## What's NOT here yet (future)
-- `POST /v1/cite` (CSL/citeproc) — keep on the server per the plan; needs a tiny
-  Node fn reusing `citation.ts`/`csl.ts`.
 - Auth is a single shared token (single-user). No multi-user/ACL.

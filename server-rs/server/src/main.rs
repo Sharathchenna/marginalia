@@ -54,15 +54,18 @@ fn err500(e: impl ToString) -> ApiError {
 type ApiResult<T> = Result<T, ApiError>;
 
 /// Run a synchronous DB closure on the blocking pool (rusqlite + reqwest::blocking
-/// must not run on the async runtime), locking the shared connection inside.
+/// must not run on the async runtime), locking the shared connection inside. The
+/// closure gets `&mut Connection` (we hold the mutex exclusively) so write paths
+/// like `db::replace_papers` that need a transaction work; read-only `&Connection`
+/// calls auto-reborrow.
 async fn db_blocking<T, F>(state: Arc<AppState>, f: F) -> ApiResult<T>
 where
-    F: FnOnce(&Connection) -> Result<T, String> + Send + 'static,
+    F: FnOnce(&mut Connection) -> Result<T, String> + Send + 'static,
     T: Send + 'static,
 {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
-        f(&conn)
+        let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+        f(&mut conn)
     })
     .await
     .map_err(err500)?
@@ -355,7 +358,7 @@ async fn feed_latest(State(st): State<Arc<AppState>>, Query(fq): Query<FeedQ>) -
     Ok(Json(json!({ "items": items, "source": "huggingface" })))
 }
 
-// ---------- metadata lookup ----------
+// ---------- metadata: lookup / retraction / webpage / feed ----------
 
 #[derive(Deserialize)]
 struct LookupQ {
@@ -363,6 +366,53 @@ struct LookupQ {
 }
 async fn lookup(Query(q): Query<LookupQ>) -> ApiResult<Json<Value>> {
     let v = tokio::task::spawn_blocking(move || metadata::lookup(&q.id))
+        .await
+        .map_err(err500)?
+        .map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(v))
+}
+
+#[derive(Deserialize)]
+struct DoiQ {
+    doi: String,
+}
+/// Check one DOI against Crossref's Retraction Watch data (privacy-preserving:
+/// only the DOI is sent). Mirrors the desktop `check_retraction` command.
+async fn retraction(Query(q): Query<DoiQ>) -> ApiResult<Json<Value>> {
+    let v = tokio::task::spawn_blocking(move || metadata::check_retraction(&q.doi))
+        .await
+        .map_err(err500)?
+        .map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(v))
+}
+
+#[derive(Deserialize)]
+struct UrlQ {
+    url: String,
+}
+/// Resolve an arbitrary web page into a saveable library item (title + summary).
+/// Mirrors the desktop `fetch_webpage` command.
+async fn webpage(Query(q): Query<UrlQ>) -> ApiResult<Json<Value>> {
+    let v = tokio::task::spawn_blocking(move || metadata::fetch_webpage(&q.url))
+        .await
+        .map_err(err500)?
+        .map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(v))
+}
+
+#[derive(Deserialize)]
+struct FeedFetchQ {
+    url: String,
+    #[serde(default)]
+    etag: String,
+    #[serde(default)]
+    since: String,
+}
+/// Fetch a user-subscribed RSS/Atom feed (or sniff a page for one) with a
+/// conditional GET. Mirrors the desktop `fetch_feed` command. NOTE: distinct from
+/// `/feed/latest`, which is the curated Hugging Face daily-papers feed.
+async fn feed_fetch(Query(q): Query<FeedFetchQ>) -> ApiResult<Json<Value>> {
+    let v = tokio::task::spawn_blocking(move || metadata::fetch_feed(&q.url, &q.etag, &q.since))
         .await
         .map_err(err500)?
         .map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))?;
@@ -522,6 +572,43 @@ async fn get_pdf(State(st): State<Arc<AppState>>, Path(id): Path<String>) -> Res
     }
 }
 
+#[derive(Deserialize)]
+struct PdfFetchBody {
+    url: String,
+}
+/// Server-side fetch: download a PDF from a URL straight into the object store as
+/// `<id>.pdf`, so a client (e.g. the iOS app) can import an arXiv/journal PDF
+/// without first downloading the bytes to the device. Mirrors desktop `download_pdf`.
+async fn fetch_pdf(
+    State(st): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<PdfFetchBody>,
+) -> ApiResult<Json<Value>> {
+    let name = safe_pdf_name(&id).ok_or(ApiError(StatusCode::BAD_REQUEST, "bad id".into()))?;
+    let url = body.url;
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "url must be http(s)".into()));
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .user_agent("Marginalia/0.1")
+        .build()
+        .map_err(err500)?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| ApiError(StatusCode::BAD_GATEWAY, format!("fetch failed: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(ApiError(StatusCode::BAD_GATEWAY, format!("download failed ({})", resp.status())));
+    }
+    let bytes = resp.bytes().await.map_err(err500)?;
+    let len = bytes.len();
+    tokio::fs::create_dir_all(&st.pdf_dir).await.map_err(err500)?;
+    tokio::fs::write(st.pdf_dir.join(name), &bytes).await.map_err(err500)?;
+    Ok(Json(json!({ "ok": true, "bytes": len, "id": id })))
+}
+
 async fn list_pdf(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
     let mut ids = Vec::new();
     if let Ok(mut rd) = tokio::fs::read_dir(&st.pdf_dir).await {
@@ -645,12 +732,16 @@ async fn main() {
         .route("/settings", get(get_settings).put(put_settings))
         .route("/feeds", get(get_feeds).put(put_feeds))
         .route("/lookup", get(lookup))
+        .route("/retraction", get(retraction))
+        .route("/webpage", get(webpage))
+        .route("/feed", get(feed_fetch))
         .route("/embed", post(embed))
         .route("/embed/status", get(embed_status))
         .route("/semantic", get(semantic))
         .route("/similar/:id", get(similar))
         .route("/pdf", get(list_pdf))
         .route("/pdf/:id", put(put_pdf).get(get_pdf))
+        .route("/pdf/:id/fetch", post(fetch_pdf))
         .route("/agent", post(agent))
         .layer(middleware::from_fn_with_state(state.clone(), auth));
 
