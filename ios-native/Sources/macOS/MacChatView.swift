@@ -1,11 +1,13 @@
 import SwiftUI
 
 // Chat about a paper (or the whole library when paper == nil) via the AI relay's
-// SSE stream. Mirrors ChatView. Presented as a sheet.
+// SSE stream. Mirrors ChatView. Used as a sheet (library) or, with embedded:true,
+// as the reader's AI inspector panel (no Done button / fixed frame).
 struct MacChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let paper: Paper?
+    var embedded = false
 
     struct Msg: Identifiable { let id = UUID(); let role: String; var text: String }
 
@@ -21,9 +23,9 @@ struct MacChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(paper == nil ? "Chat with your library" : "Chat about this paper").font(.headline)
+                Text(paper == nil ? "Chat with your library" : "Ask about this paper").font(.headline)
                 Spacer()
-                Button("Done") { dismiss() }
+                if !embedded { Button("Done") { dismiss() } }
             }
             .padding(12)
             Divider()
@@ -57,7 +59,8 @@ struct MacChatView: View {
             }
             .padding(12)
         }
-        .frame(width: 560, height: 560)
+        .frame(width: embedded ? nil : 560, height: embedded ? nil : 560)
+        .frame(maxWidth: embedded ? .infinity : nil, maxHeight: embedded ? .infinity : nil)
     }
 
     private func bubble(_ m: Msg) -> some View {

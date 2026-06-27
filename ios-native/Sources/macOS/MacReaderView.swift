@@ -21,7 +21,7 @@ struct MacReaderView: View {
     @State private var hlColor = "#FBE38E"
     @State private var importing = false
     @State private var showEdit = false
-    @State private var showChat = false
+    @State private var aiPanel = false
     @State private var showCite = false
 
     private static let colors: [(String, String)] = [
@@ -58,8 +58,13 @@ struct MacReaderView: View {
             if explainerBody == nil, aiConfigured { await generateExplainer() }
         }
         .sheet(isPresented: $showEdit) { MacEditPaperView(paperId: paper.id).environment(model) }
-        .sheet(isPresented: $showChat) { MacChatView(paper: p).environment(model) }
         .sheet(isPresented: $showCite) { MacCiteView(paperId: paper.id).environment(model) }
+        .inspector(isPresented: $aiPanel) {
+            MacChatView(paper: p, embedded: true)
+                .environment(model)
+                .id(paper.id)   // fresh conversation per paper
+                .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf]) { result in
             if case .success(let url) = result { importPDF(url) }
         }
@@ -196,8 +201,13 @@ struct MacReaderView: View {
             if tab == "pdf" {
                 Button { importing = true } label: { Image(systemName: "square.and.arrow.down") }.help("Import PDF")
             }
+            Button { aiPanel.toggle() } label: {
+                Image(systemName: "sparkles")
+            }
+            .help("Ask AI about this paper")
+            .background(aiPanel ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
             Menu {
-                Button { showChat = true } label: { Label("Chat", systemImage: "bubble.left.and.text.bubble.right") }
+                Button { aiPanel.toggle() } label: { Label("Ask AI", systemImage: "sparkles") }
                 Button { showCite = true } label: { Label("Cite", systemImage: "quote.opening") }
                 Button { showEdit = true } label: { Label("Edit", systemImage: "pencil") }
                 if aiConfigured {

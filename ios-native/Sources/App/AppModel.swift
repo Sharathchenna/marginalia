@@ -50,7 +50,7 @@ final class AppModel {
         let env = ProcessInfo.processInfo.environment
         if let f = env["MARG_FILTER"], !f.isEmpty { filter = f; screen = .library; launchOverride = true }
         if let s = env["MARG_SCREEN"], let sc = Screen(rawValue: s) { screen = sc; launchOverride = true }
-        if let pid = env["MARG_OPEN"], paper(pid) != nil { pendingOpen = pid; launchOverride = true }
+        if let pid = env["MARG_OPEN"], paper(pid) != nil { pendingOpen = pid; selectedId = pid; launchOverride = true }
         if let v = env["MARG_VIEW"], v == "card" || v == "table" { settings.view = v; launchOverride = true }
         if let api = env["MARG_API"], !api.isEmpty { settings.apiUrl = api; launchOverride = true }
         if launchOverride { preferredColumnDetail = true }
