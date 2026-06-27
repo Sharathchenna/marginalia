@@ -1,10 +1,9 @@
 # Marginalia data + sync server (Rust / Axum)
 
-The single-user, self-hosted **data tier** for the native iOS app (and any future
-`RemoteRepository` web build). It re-targets the desktop app's Tauri commands to
-HTTP routes, **reusing the exact same `db` / `metadata` / `embeddings` logic** —
-see `core/src/lib.rs`, which `#[path]`-includes `../../../src-tauri/src/*.rs` so
-there is one source of truth and the SQLite logic can't drift.
+The single-user, self-hosted **data tier** for the native macOS + iOS apps. It
+exposes the library over HTTP, backed by the `db` / `metadata` / `embeddings`
+modules in `core/src/` (moved here from the retired Tauri desktop app, so the
+SQLite store + metadata logic now live in one place: the server).
 
 This is the sync hub + PDF object store described in
 `docs/NATIVE-IOS-SERVER-PLAN.md`. It complements the **AI relay** (`server/server.mjs`,
@@ -51,8 +50,8 @@ to set them.
 
 ## Deploy
 Build the static-ish binary and run behind the same private HTTPS as the AI relay
-(Tailscale serve / Caddy). A `Dockerfile` is provided (multi-stage; build context
-must be the **repo root** so the `#[path]` includes resolve):
+(Tailscale serve / Caddy). A `Dockerfile` is provided (multi-stage; self-contained
+— the build context only needs the `server-rs/` tree):
 ```bash
 docker build -f server-rs/Dockerfile -t marginalia-data .
 docker run -e MARG_TOKEN=secret -v marg-data:/data -p 127.0.0.1:8800:8800 marginalia-data

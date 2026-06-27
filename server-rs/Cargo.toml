@@ -1,7 +1,7 @@
 # Marginalia self-hosted data + sync server (Rust/Axum).
-# Isolated workspace — does NOT touch the desktop src-tauri crate. The shared
-# logic (db/metadata/embeddings) is reused from src-tauri verbatim via #[path]
-# includes in the `core` crate, so there is one source of truth.
+# Self-contained workspace: the shared SQLite/metadata/embeddings logic lives in
+# the `core` crate (server-rs/core/src/{db,metadata,embeddings}.rs). It was moved
+# here from the retired Tauri desktop app, which the native Swift apps replace.
 [workspace]
 resolver = "2"
 members = ["core", "server"]

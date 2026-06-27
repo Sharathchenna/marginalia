@@ -16,7 +16,7 @@
 //   PORT             (default 8799)
 //   MARG_TOKEN       require `Authorization: Bearer <token>` when set (recommended)
 //   MARG_CORS_ORIGIN allowed CORS origin for the web build (default "*")
-//   AGENT_SCRIPT     path to agent.mjs (default ../src-tauri/sidecar/agent.mjs)
+//   AGENT_SCRIPT     path to agent.mjs (default ./sidecar/agent.mjs)
 //   TTS_SCRIPT       path to tts.mjs   (default alongside AGENT_SCRIPT)
 import http from "node:http";
 import { spawn } from "node:child_process";
@@ -28,7 +28,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8799);
 const TOKEN = process.env.MARG_TOKEN || "";
 const ORIGIN = process.env.MARG_CORS_ORIGIN || "*";
-const AGENT_SCRIPT = process.env.AGENT_SCRIPT || resolve(here, "../src-tauri/sidecar/agent.mjs");
+const AGENT_SCRIPT = process.env.AGENT_SCRIPT || resolve(here, "sidecar/agent.mjs");
 const TTS_SCRIPT = process.env.TTS_SCRIPT || resolve(dirname(AGENT_SCRIPT), "tts.mjs");
 
 function cors(res) {

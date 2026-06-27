@@ -1,15 +1,19 @@
 name: MarginaliaSpike
 options:
   bundleIdPrefix: dev.marginalia
+  createIntermediateGroups: true
   deploymentTarget:
     iOS: "17.0"
-  createIntermediateGroups: true
+    macOS: "14.0"
 targets:
+  # ---- iOS / iPadOS app (existing SwiftUI UI in Sources/Features) ----
   MarginaliaSpike:
     type: application
     platform: iOS
     sources:
-      - Sources
+      - path: Sources
+        excludes:
+          - "macOS/**"        # macOS-only UI; not built into the iOS app
       - Resources
     settings:
       base:
@@ -28,10 +32,48 @@ targets:
         DEVELOPMENT_TEAM: XFHWLX5XD8
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
+
+  # ---- macOS app (new native UI in Sources/macOS) ----
+  # Shares the Foundation-only Core (Models + Common services + Data + AppModel)
+  # with the iOS app; ships its own desktop UI. Excludes Sources/Features (UIKit)
+  # and the iOS @main entry.
+  MarginaliaMac:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/Models
+      - Sources/Common
+      - Sources/Data
+      - path: Sources/App/AppModel.swift
+      - Sources/macOS
+      - Resources/seed.json
+      - Resources/sample.pdf
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dev.marginalia.mac
+        PRODUCT_NAME: Marginalia
+        MARKETING_VERSION: "0.0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        INFOPLIST_KEY_CFBundleDisplayName: Marginalia
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        # Personal/dev build: run unsandboxed so URLSession + local PDF import work
+        # without an entitlements round-trip. Add the app sandbox + network.client
+        # entitlement before any distribution.
+        ENABLE_APP_SANDBOX: "NO"
+        DEVELOPMENT_TEAM: XFHWLX5XD8
+        CODE_SIGN_STYLE: Automatic
 schemes:
   MarginaliaSpike:
     build:
       targets:
         MarginaliaSpike: all
+    run:
+      config: Debug
+  MarginaliaMac:
+    build:
+      targets:
+        MarginaliaMac: all
     run:
       config: Debug

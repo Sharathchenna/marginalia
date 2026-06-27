@@ -1,22 +1,22 @@
 # Marginalia AI backend
 
-A tiny self-hostable HTTP/SSE bridge to the Claude Agent SDK sidecar
-(`src-tauri/sidecar/agent.mjs`). It lets the **iOS app and the web build** use AI
-(chat, summarize, auto-tag, claim verification) — which otherwise require the
-desktop app's local Node sidecar. Your Anthropic credentials stay on the server.
+The Node-side services the native apps can't run locally: a Claude Agent SDK
+relay (`sidecar/agent.mjs`), Microsoft Edge neural read-aloud (`sidecar/tts.mjs`),
+and citeproc/CSL citations (`cite.mjs`). Your Anthropic credentials stay on the
+server.
 
 ## How it works
-Per request, the server spawns `node agent.mjs`, pipes the JSON payload to its
-stdin, and relays the sidecar's JSON-lines events to the client as Server-Sent
-Events. The app's `src/lib/agent.ts` calls it when an **AI backend URL** is set in
-Settings (and that's the only AI path on iOS/web).
+For `/v1/agent`, the server spawns `node sidecar/agent.mjs`, pipes the JSON payload
+to its stdin, and relays the sidecar's JSON-lines events to the client as
+Server-Sent Events. `/v1/tts/*` spawns `sidecar/tts.mjs`; `/v1/cite` runs in-process
+via `cite.mjs`. The apps call these when an **AI backend URL** is set in Settings.
 
 ## Run it
 ```bash
-# from the repo root — install the sidecar's SDK once:
-cd src-tauri/sidecar && npm install && cd -
+# from the server/ dir — install the sidecar's SDK once:
+npm --prefix sidecar install && npm install
 
-# then start the server (zero extra deps):
+# then start the server:
 ANTHROPIC_API_KEY=sk-ant-...  MARG_TOKEN=your-shared-secret  node server/server.mjs
 ```
 Or with Docker (bundles the sidecar):
@@ -41,4 +41,5 @@ Put it behind HTTPS (Caddy/nginx/Cloudflare Tunnel). Then in the app:
 | `MARG_TOKEN` | (none) | require `Authorization: Bearer <token>` — **set this** |
 | `MARG_CORS_ORIGIN` | `*` | allowed origin for the web build |
 | `PORT` | `8799` | listen port |
-| `AGENT_SCRIPT` | `../src-tauri/sidecar/agent.mjs` | path to the sidecar |
+| `AGENT_SCRIPT` | `./sidecar/agent.mjs` | path to the agent sidecar |
+| `TTS_SCRIPT` | `./sidecar/tts.mjs` | path to the TTS sidecar |
